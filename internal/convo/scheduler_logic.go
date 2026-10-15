@@ -16,7 +16,7 @@ type TickInput struct {
 
 	// Counters
 	ActiveToday  int // 今日主动开场次数 (≤ 配额)
-	NoInputToday int // 今日 noInput 低频消息次数 (≤1)
+	NoInputToday int // 今日 noInput 低频消息次数
 	PreviewToday int // 今日事件预告次数 (每个切换槽一次)
 	PendingReply int // 待发延迟回复数 (busy 30-90min)
 	// §4.3 中断-恢复到点。**它是一次"接着说", 不是新的开口** —— 所以不占主动配额,
@@ -105,6 +105,17 @@ func inPreviewWindow(now time.Time, slotStartMin int) bool {
 	return d > 0 && d <= 5
 }
 
+// NoInputQuota 把配置折成**条数上限** —— 它是解释这个配置的**唯一一处** ✓。
+//
+// ⚠️ **≤0 → 1**(内置默认 ✓)。与 `HeatQuota` 的 cost 同规:
+// "没配"不等于"配成 0" ✓ —— 后者会让这条机制**静默关掉** ✓。
+func NoInputQuota(cfg int) int {
+	if cfg <= 0 {
+		return 1
+	}
+	return cfg
+}
+
 // DecideTick 每分钟裁决一次。返回唯一动作 (优先级: 预告 > 延迟回复 > 破功 > 回归 > noInput > 偷回 > 主动开场 > 秒回)。
 // 用户消息进来的即时回复不走 tick — 由 dialog 触发器直接判断 (见 dialog.go)。
 func DecideTick(in TickInput, cfg SchedulerConfig) TickAction {
@@ -161,7 +172,7 @@ func DecideTick(in TickInput, cfg SchedulerConfig) TickAction {
 	}
 
 	// 6. noInput 低频: 静默≥24h 且 free 槽 → ≤1 次/日
-	if in.State == StateFree && in.SilentDays >= 1 && in.NoInputToday < 1 {
+	if in.State == StateFree && in.SilentDays >= 1 && in.NoInputToday < NoInputQuota(cfg.NoInputMaxDay) {
 		return TickAction{Kind: ActNoInput, Reason: "24h quiet + free"}
 	}
 
