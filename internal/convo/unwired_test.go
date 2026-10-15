@@ -160,7 +160,6 @@ var knownUnwired = map[string]bool{
 	"NightTierStatsSnapshot":  true,
 	"PromptDiff":              true,
 	"PromptStructureProblem":  true,
-	"RecentHeatLog":           true,
 	"Reliability":             true,
 	"RetireCastMember":        true,
 	"SaveInterruption":        true,

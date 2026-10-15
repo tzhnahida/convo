@@ -125,6 +125,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/convo/coach", s.routeCoach)
 	// §6.10.4 称呼的 owner 入口: GET 看成员 / POST 设一个人的称呼。
 	mux.HandleFunc("/api/v1/convo/member", s.routeMember)
+	// §12 热力流水: 机制有没有生效, 要看数字。
+	mux.HandleFunc("/api/v1/convo/heat", s.routeHeat)
 	mux.HandleFunc("/api/v1/convo/slang", s.routeSlang)
 	// §6.8 偏向可见 (「一个看不见偏向的群友, 比一个没有偏向的群友更危险」)
 	mux.HandleFunc("/api/v1/convo/bias", s.handleBiasGet)
