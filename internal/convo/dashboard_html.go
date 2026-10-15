@@ -210,6 +210,7 @@ var SPEC=[
   ["observation","/observation"],
   ["bias","/bias"],
   ["ownermult","/owner_mult"],
+  ["chime","/chime"],
   ["traces","/traces"],
   ["sparks","/sparks"],
   ["learned","/learned"],
@@ -343,6 +344,8 @@ function pOverview(){
     '<div class="hint">计数器为「今日」，由注入时钟盖章（时间旅行下也是仿真时间）。</div>',"",1));
   out.push(card("关系倍率 · 主人永远第一", errOf("ownermult")+multBody(DATA.ownermult),
     "上限 "+esc(String((DATA.ownermult||{}).cap||5))+"×",0,"span2"));
+  out.push(card("插话收敛 · 被说过就少说", errOf("chime")+chimeBody(DATA.chime),
+    esc(String(((DATA.chime||{}).converged||[]).length))+" 个群",0,"span2"));
   out.push(card("偏向可见 · 谁的话被接得多", errOf("bias")+biasBody(b),
     "近 "+esc(b.window_days||14)+" 天",0,"span2"));
   out.push(card("最近消息流", errOf("inbox")+msgBody(DATA.inbox),
@@ -352,6 +355,34 @@ function pOverview(){
 }
 // ⚠️ 倍率是**设计稿 L1301 给 owner 留的杠杆** —— 保证"主人永远第一"。
 // 它的作用是加快关系量的积累与抬高私聊的热力上限, 而**不进群场景**(护栏 5)。
+// ⚠️ 这张卡是**安全阀的入口** —— chime.go 说「不自动恢复,
+// 要放开只能 owner 手动」，而那个口子原来**只出不进**。
+//
+// ⚠️ 概率**从接口拿**, 不在页面上写死 10/1 —— 写死会与代码常量分叉。
+function chimeBody(d){
+  d=d||{}; var rows=(d.converged||[]).map(function(x){
+    return "<tr><td class=mono>"+esc(x.scene_key)+"</td>"+
+      "<td class=mono>"+esc(String(x.complained_ts||"").slice(0,16))+"</td>"+
+      "<td>"+esc(String(d.rate_after_pct||1))+"% → "+esc(String(d.rate_pct||10))+"%</td>"+
+      '<td><button class="btn sm" onclick="chimeClear(&#39;'+esc(x.scene_key)+"&#39;)'>放行</button></td></tr>";
+  });
+  return (rows.length
+    ? tbl(["场景","被说的时间","放行后概率",""],rows)
+    : empty("没有被说过 —— 全部按 "+esc(String(d.rate_pct||10))+"% 走"))+
+    '<div class="hint">⚠️ 被群友说过之后它**稳定在 '+esc(String(d.rate_after_pct||1))+'%** 且**不自动恢复** ——'+
+    '「重启之后又变得话多」正是群友最会注意到的反复，所以收敛是**落库**的。'+
+    '而**放行**是这个功能唯一的安全阀：判定只要求「命中抱怨词 + 这句话在跟它说话」，'+
+    '一句对着**别人**说的「别刷屏」也可能落进来。</div>';
+}
+function chimeClear(scene){
+  if(!confirm("放行 "+scene+"？它会回到正常插话概率。"))return;
+  api("/chime",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({scene_key:String(scene)})}).then(function(r){
+      toast(r.cleared?("已放行 "+r.scene_key):(r.scene_key+" 本来就没被抱怨过"), !r.cleared);
+      return loadAll();
+    }).catch(function(e){toast("失败: "+e.message,1);});
+}
+
 function multBody(d){
   d=d||{}; var rows=(d.mults||[]).map(function(x){
     // ⚠️ 上限与默认值都**从接口拿**, 不在这里写死 ——

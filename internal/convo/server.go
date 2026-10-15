@@ -119,6 +119,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/convo/dayplan", s.handleDayPlan)
 	// §5.7 owner 的手动关系倍率 (设计稿 L1301:「管理页给任一 uin 设」)。
 	mux.HandleFunc("/api/v1/convo/owner_mult", s.routeOwnerMult)
+	// §6.x 插话收敛的安全阀: GET 看哪些群被抱怨过 / POST 放行一个群。
+	mux.HandleFunc("/api/v1/convo/chime", s.routeChime)
 	mux.HandleFunc("/api/v1/convo/slang", s.routeSlang)
 	// §6.8 偏向可见 (「一个看不见偏向的群友, 比一个没有偏向的群友更危险」)
 	mux.HandleFunc("/api/v1/convo/bias", s.handleBiasGet)
