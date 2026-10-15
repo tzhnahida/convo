@@ -1651,6 +1651,27 @@ func (e *Engine) prepareDailyJobs(at time.Time) {
 		// **一个白天吵了两架、加班四小时、群里热到爆的日子, 依然判不出失眠**。
 		e.InsomniaReadings(&inputs, night)
 		insomnia, score, cause := InsomniaFrom(inputs)
+		// §4.4.5 **把这一夜记下来** —— 而在此之前**没有任何东西写过 `convo_night`** ✗。
+		//
+		// ⚠️ 后果是一条**整节机制从来没生效过**:
+		//
+		//   `sleepEffect()`(接了的 ✓)读 `LastNight()` 永远拿不到行
+		//   ⇒ 每次都落回 `SettleSleepQuality(SleepQualityInput{})` 的默认值
+		//   ⇒ 「**昨夜没睡好 → 今天回得慢一点、话少一点**」(DelayFactor /
+		//      LengthFactor / QuotaDelta 三个杠杆)**一次都没生效过**。
+		//
+		// ⚠️ 而这里**只写已经算出来的事实**: 噩梦 / 失眠 / 夜里被吵醒几次。
+		// `wake_ts` 与 `latency_min` **这里拿不到** —— 它们是"醒来那一刻"的事,
+		// 而这一批跑在**睡点**上(§4.4.2)。
+		// ⇒ 留空, 而 `SleepScore` 的零值纪律会把它们当**未提供** ✓(不是极值 ✓)。
+		if err := e.Store.SaveNight(Night{
+			Night:      night,
+			Interrupts: late,
+			Nightmare:  inputs.Dream,
+			Insomnia:   insomnia,
+		}); err != nil {
+			log.Warn("convo:engine", "§4.4.5 一夜的读数落库失败(睡眠质量会一直是默认值): %v", err)
+		}
 		st, serr := LoadSleepPoint(e.Store.DB, e.ownerKey(), night)
 		if serr == nil {
 			if insomnia {
