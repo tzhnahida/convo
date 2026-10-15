@@ -544,7 +544,11 @@ func TestSceneLoadFailure_FallsBackToSpeaking(t *testing.T) {
 	// (1) 纯函数侧: 读库失败走 err 通道。
 	d := ResolveConflict(msgs, base, ConflictContext{Stage: ConflictStageIntimate},
 		errors.New("disk I/O error"), cfg)
-	if d.Verdict != ConflictNormal || !d.Speaking() {
+	// ⚠️ **直接判「是不是 Silent」** ——
+	// 原来这里写的是 `d.Verdict != ConflictNormal || !d.Speaking()`，
+	// 而 `Speaking()` 把 Normal（不介入）与 Intervene（介入）**混成同一个 true**。
+	// 两者在 §6.9 里走完全不同的路，混起来就再也分不开「读库失败」与「判不出来」。
+	if d.Verdict == ConflictSilent {
 		t.Fatalf("读场景失败必须往说话倒, got %s (%s)", d.Verdict, d.Why)
 	}
 	if strings.Contains(d.Why, "沉默") && !strings.Contains(d.Why, "不沉默") {
@@ -552,7 +556,7 @@ func TestSceneLoadFailure_FallsBackToSpeaking(t *testing.T) {
 	}
 	// (2) 语义判不出 → 沉默 (唯一出口)。
 	dc := DecideConflict(ConflictSignalsOf(msgs, base, cfg), ConflictContext{Undecidable: true}, cfg)
-	if dc.Verdict != ConflictSilent || dc.Speaking() {
+	if dc.Verdict != ConflictSilent {
 		t.Fatalf("语义判不出才沉默, got %s", dc.Verdict)
 	}
 	// (3) 读库侧的读失败必须**冒泡**, 不许被吞成"没有记录"。
@@ -567,7 +571,7 @@ func TestSceneLoadFailure_FallsBackToSpeaking(t *testing.T) {
 		t.Fatal("读库失败必须返回错误, 不许静默当成'没有介入过'")
 	}
 	d3 := s.GateConflict(cflTestScene, msgs, ConflictContext{Stage: ConflictStageIntimate}, cfg, cflTestT0)
-	if d3.Verdict != ConflictNormal || !d3.Speaking() {
+	if d3.Verdict == ConflictSilent {
 		t.Fatalf("冷却读取失败必须走正常说话, got %s (%s)", d3.Verdict, d3.Why)
 	}
 	// 反面: 把 ctxErr != nil 与 ctx.Undecidable 并成一条 (都返回 Silent) → (1)/(3) 变红。

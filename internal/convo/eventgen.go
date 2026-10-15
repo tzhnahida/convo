@@ -495,13 +495,6 @@ func eventGenMemReserve(day string, cap int) bool {
 	return true
 }
 
-// resetEventGenMemGate 清掉进程内闸门 (测试用: 正式路径的配额在库里, 不在这里)。
-func resetEventGenMemGate() {
-	eventGenMemMu.Lock()
-	eventGenMemDay, eventGenMemN = "", 0
-	eventGenMemMu.Unlock()
-}
-
 // eventGenReserve 预留一次调用: 有库走库 (跨重启硬约束), 无库/库坏走进程内闸门。
 //
 // 库坏的时候**不是放行**, 而是退回进程内闸门 + 出声 —— 静默放行会让配额形同虚设,
@@ -618,14 +611,19 @@ var eventGenPublicFactWords = []string{
 //	        而不是一个调用方可能顺手 `return err` 掉的 error
 //	        (与 GenerateSchedule 同规: 兜底路径返回可用结果, 痕迹留在读数里)。
 //
-// 配额: 本路径无库, 配额记在**进程内**, 重启即忘。正式路径请用 GenerateNightPool。
-func GenerateDayPool(ctx context.Context, c Chatter, env EnvDay, p *PersonaProfile, now time.Time) ([]WorldEvent, error) {
-	return eventGenRun(ctx, c, nil, env, p, now)
-}
-
-// GenerateNightPool 是**正式入口** (夜间批处理调它, 每夜一次)。
+// ⚠️ 这里原来有一个 `GenerateDayPool`(**无库版**) —— **已删**。
 //
-// 比 GenerateDayPool 多的那个 store 不是装饰, 它买来三样东西:
+// 它自己的注释就写着「配额记在**进程内**, 重启即忘。**正式路径请用
+// `GenerateNightPool`**」—— 也就是说它**自己声明了自己不是那条路**。
+// 而它在生产与测试里的调用者都是 **0**。
+//
+// ⚠️ 无库版的配额闸门还有另一个毛病: 进程内计数**重启即忘**,
+// 而那正是 §3.6.2 要防的("重启之后又能生成一次") —— 留着它等于留一条
+// **绕过硬配额**的路, 而谁都不会注意到自己走错了那条。
+
+// GenerateNightPool 是**唯一的入口** (夜间批处理调它, 每夜一次)。
+//
+// 那个 store 不是装饰, 它买来三样东西:
 //   - §3.6.2 要求的输入: 最近 7 天的世界事件 / 今天的心情 / 今天的日程 —— 全在库里,
 //     缺了它们, "语境自洽"和"不重复"两条就都只是提示词里的一句空话;
 //   - 跨重启的**硬配额** (桩在 convo_eventgen_call 表里);

@@ -36,25 +36,26 @@ func TestDeriveTier_FourTiers(t *testing.T) {
 	}
 }
 
-// TestTierMemory_ForgetAndHabitNeverPersist **本组最要紧的一条**。
+// TestTier_ForgetAndHabitNeverPersist **本组最要紧的一条**。
 //
 // 反面: forget 档落库 → 红。"遗忘"在实现上唯一诚实的做法是
 // **它必须发生在写入口** —— 写进去再删是两次 IO, 还留痕。
 //
 // 反面: habit 档落进记忆表 → 红。那会变成"它记得你熬夜, 但作息一动不动",
 // 而第四档的全部意义就是"**我的作息因此变了**"。
-func TestTierMemory_ForgetAndHabitNeverPersist(t *testing.T) {
+//
+// ⚠️ **它原来测的是 `TierMemory`(已删)**, 而它钉的是**一条性质**, 不是那个函数 ——
+// 所以按"删重复实现时先问它的测试钉什么"那条规矩, 它被**搬到了生产路径**上:
+// `ApplySessionDelta` 才是真正会跑的那条(§4.4.3 四档的判据在它里面)。
+func TestTier_ForgetAndHabitNeverPersist(t *testing.T) {
 	s := newTestStore(t)
-	n, err := s.TierMemory([]MemoryDelta{
+	err := s.ApplySessionDelta("sess-1", SessionDelta{Memories: []MemoryDelta{
 		{MemID: "forget1", K: "chat", V: "随便说说", Label: "闲聊", Kind: "chat", Confidence: 0.4},
 		{MemID: "habit1", K: "habit", V: "作息偏晚, 经常一两点睡", Label: "习惯", Kind: "habit", Confidence: 0.75},
 		{MemID: "short1", K: "food", V: "喜欢吃火锅", Label: "吃的", Kind: "food", Confidence: 0.9},
-	})
+	}})
 	if err != nil {
-		t.Fatalf("TierMemory: %v", err)
-	}
-	if n[TierForget] != 1 || n[TierHabit] != 1 || n[TierShort] != 1 {
-		t.Fatalf("四档计数不对: %v", n)
+		t.Fatalf("ApplySessionDelta: %v", err)
 	}
 	count := func(id string) int {
 		var c int

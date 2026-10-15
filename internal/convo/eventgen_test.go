@@ -9,6 +9,17 @@ import (
 	"time"
 )
 
+// resetEventGenMemGate 清掉进程内闸门。
+//
+// ⚠️ 它原来住在 `eventgen.go`(生产文件)里 —— 那是**放错了地方**:
+// 棘轮按"生产代码里有没有调用者"判, 于是每一个测试辅助都会被它当成死代码。
+// 挪到这里之后, 那个信号就干净了。
+func resetEventGenMemGate() {
+	eventGenMemMu.Lock()
+	eventGenMemDay, eventGenMemN = "", 0
+	eventGenMemMu.Unlock()
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §3.6 生成器与预算闸门 —— 叶子模块的测试。
 //

@@ -356,7 +356,16 @@ type ConflictDecision struct {
 
 // Speaking 报告这次决策是否落在"正常说话"这一侧 (不沉默)。
 // 调用方用它回答 R28 那个问题: 系统故障**绝不能**变成不说话。
-func (d ConflictDecision) Speaking() bool { return d.Verdict != ConflictSilent }
+// ⚠️ 这里原来有一个 `Speaking()`(`Verdict != ConflictSilent`) —— **已删**。
+//
+// ⚠️ 它**守不住 R28**: 它的判据里 `ConflictNormal`(故障/不介入)
+// 与 `ConflictIntervene`(介入) **都是 true**, 而这两件事在 §6.9 里
+// 走的是**完全不同的路**(一个什么都不改, 一个抬成发言)。
+//
+// 消费方早就改成了对 `dec.Verdict` 的显式 switch(`conflictwire.go`),
+// 而那个 switch **把两个裁定分得开** —— 留着一个分不开的快捷判据,
+// 只会让人再犯"把 `ConflictEscalate` 当成 `ConflictSilent`"那个错
+// (那个错在 `conflictwire.go` 的注释里记着, 差一点又变成一条不生效的闸门)。
 
 // ——— 四个信号 (全部现算) ———
 

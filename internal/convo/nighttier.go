@@ -1,7 +1,6 @@
 package convo
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -84,34 +83,22 @@ func TierReason(m MemoryDelta) string {
 	return ""
 }
 
-// TierMemory 第 2 步。返回四档条数。
+// ⚠️ 这里原来有一个 `TierMemory`(四档落库) —— **已删**。
 //
-// ⚠️ **forget 档不落库** —— 写进去再删是两次 IO, 还留痕。
-// 这是"遗忘"在实现上唯一诚实的做法: 它必须发生在**写入口**。
+// 它被 `memory.go` 里那条路径**取代**了, 而那条路**更强**:
 //
-// ⚠️ **short 档"衰减出局" = 退出注入批次 (state=dormant), 不物理删除。**
-// 物理删除会破 §7.4 的遗忘权语义 (删除只能由它自己触发),
-// 也会和"事件沉降保证前后一致"打架 —— 记忆凭空消失 = 前后不一致。
-func (s *Store) TierMemory(items []MemoryDelta) (map[string]int, error) {
-	counts := map[string]int{}
-	for _, m := range items {
-		tier := DeriveTier(m)
-		counts[tier]++
-		switch tier {
-		case TierForget:
-			continue // 不写 —— 见上
-		case TierHabit:
-			// 行为模式**不写记忆表** —— 它要去改日程 (HabitSignal 负责搬运)。
-			// 写成一条记忆的话, 它会"记得你熬夜"但作息一动不动。
-			continue
-		default:
-			if err := s.UpsertMemory(m, "active"); err != nil {
-				return counts, fmt.Errorf("tier %s: %w", tier, err)
-			}
-		}
-	}
-	return counts, nil
-}
+// | | `TierMemory`(已删) | `memory.go` 那条 |
+// |---|---|---|
+// | forget / habit 不落库 | ✓ | ✓ |
+// | **置信度分流** | ✗(一律落 active) | ✓(≥0.7 落 active, 否则 pending) |
+// | 痕迹 | 只返回条数 | `noteTierDropped`(进了读数) |
+//
+// 所以它不是"没接上", 而是**接上它会是一次回归** ——
+// 一条低置信度的记忆会被它直接落成 active, 绕过整个待求证机制。
+//
+// ⚠️ 而它注释里那两条规则**已经在 `memory.go` 那一边实现了**(逐字):
+// 「forget 档不落库」/「habit 档不写记忆表, 它要去改日程」。
+// 删的是**重复的那一份**, 不是那两条规则。
 
 // BoundaryDecayFloor 边界类记忆的**降权地板** (§7.4 L1580 / §4.4.3 L828)。
 //
