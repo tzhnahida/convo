@@ -459,13 +459,18 @@ func (s *Store) LoadSchedule() (*WeekSchedule, error) {
 
 // ——— mood ———
 
-func (s *Store) SaveMood(state, note string) error {
-	_, err := s.DB.Exec(`INSERT INTO convo_mood(id, state, since_ts, note)
-		VALUES(1, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET state=excluded.state, since_ts=excluded.since_ts, note=excluded.note`,
-		state, clock.TodayTS(), note)
-	return err
-}
+// ⚠️ 这里原来有一个 `SaveMood(state, note)` —— **已删**。
+//
+// ⚠️ `scheduler.go` 里记着它被移除的理由:
+//
+//    「这里曾经写 `SaveMood(state, "tick")` —— 把**日程状态**存进了
+//      一张叫 mood 的表。」
+//
+// —— 而**心情**现在由 `mood.go` + `convo_mood_state` 持有
+// (成因 / 半衰期 / 变化率上限), 与日程状态无关 ✓。
+//
+// ⚠️ 它只剩**一个测试调用者**, 而那个调用只验证「**不报错**」——
+// 那不是一条性质 ✗。
 
 // ——— profile ———
 

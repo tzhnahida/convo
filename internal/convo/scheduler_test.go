@@ -147,8 +147,5 @@ func TestScheduler_tick_transition(t *testing.T) {
 	if len(transitions) != 2 {
 		t.Fatalf("transitions = %v, want [free focus]", transitions)
 	}
-	// 落库验证
-	if err := store.SaveMood("focus", "tick"); err != nil {
-		t.Fatal(err)
-	}
+	// ⚠️ 这里原来还有一句「落库验证」调 `SaveMood` —— 那个函数已删
 }
