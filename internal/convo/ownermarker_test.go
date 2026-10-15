@@ -41,7 +41,7 @@ func TestOwnerMarker_NeverInGroupPrompt(t *testing.T) {
 		SelfPlace:    SelfRoleLine(&Scene{SceneKey: scene, SelfRole: RoleMember, Stage: StageFamiliar}, DefaultConfig().Group),
 		RoleNote:     "你在群里是普通群友",
 		Memories:     []Memory{{MemID: "m1", Label: "工作", V: "在准备跳槽"}},
-		PersonNote:   PersonNoteLine("某人", "2735604537", []PersonMemory{{MemID: "p1", Label: "职业", V: "牙医"}}, nil),
+		PersonNote:   PersonNoteLine("某人", "", "2735604537", []PersonMemory{{MemID: "p1", Label: "职业", V: "牙医"}}, nil),
 		BondNote:     "你们聊得挺多",
 		RegisterNote: "最近的语气偏随意",
 		GuardNote:    "别打听住址",

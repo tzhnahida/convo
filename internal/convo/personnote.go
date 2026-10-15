@@ -30,15 +30,21 @@ import (
 //
 // ⚠️ 走 `SceneMemberByUIN`(唯一的身份查询入口), **没有"按名字查"那条路** ——
 // 那正是 §6.10.4「绝不猜外号」的机器化形态。
-func (e *Engine) displayNameOf(sceneKey, uin string) string {
+func (e *Engine) displayNameOf(sceneKey, uin string) (name, address string) {
 	if e.Store == nil {
-		return ""
+		return "", ""
 	}
 	m, err := e.Store.SceneMemberByUIN(sceneKey, uin)
 	if err != nil || m == nil {
-		return ""
+		return "", ""
 	}
-	return strings.TrimSpace(m.DisplayName)
+	// ⚠️ **两个都从这个场景的那一行取** —— 设计稿 L1298:
+	//
+	//   「**称呼与禁区** | 按场景: 在 A 群叫外号, 在 B 群叫全名, **两边不许串**」
+	//
+	// ⚠️ 而 `SceneMemberByUIN(sceneKey, uin)` 的键就是 `(场景, uin)` ✓ ——
+	// 所以"不许串"是**查询本身**保证的, 不需要额外判断 ✓。
+	return strings.TrimSpace(m.DisplayName), strings.TrimSpace(m.AddressAs)
 }
 
 // PersonNoteLine 渲染「这一轮是谁在说话 + 关于他我知道什么」。
@@ -52,8 +58,8 @@ func (e *Engine) displayNameOf(sceneKey, uin string) string {
 // ⚠️ **名字与 uin 都可为空** —— 名字为空时退回"这个人",
 // 而 uin 为空时**不带括号**(与 `SceneHistoryLine` 同一条纪律:
 // "有个人"和"uin 是问号"是两件事)。
-func PersonNoteLine(displayName, uin string, mems []PersonMemory, facts []PersonMemory) string {
-	if len(mems) == 0 && len(facts) == 0 {
+func PersonNoteLine(displayName, address, uin string, mems []PersonMemory, facts []PersonMemory) string {
+	if len(mems) == 0 && len(facts) == 0 && strings.TrimSpace(address) == "" {
 		return ""
 	}
 	name := strings.TrimSpace(displayName)
@@ -68,6 +74,11 @@ func PersonNoteLine(displayName, uin string, mems []PersonMemory, facts []Person
 	// ⚠️ 标题里点明"**这一轮**在说话的那个人" ——
 	// 不点明的话, 群里的"关于 ta 的事"会被模型当成"关于所有人"。
 	fmt.Fprintf(&b, "\n【关于**这一轮说话的人** %s】", who)
+	// ⚠️ **称呼按场景各存一份** (设计稿 L1298): 在 A 群叫外号、在 B 群叫全名 ✓。
+	// 而它到这里已经是**这个场景那一行**取出来的 ✓ —— "不许串"由查询保证 ✓。
+	if a := strings.TrimSpace(address); a != "" {
+		fmt.Fprintf(&b, "\n（你在这个地方叫他「%s」—— 别的场景怎么叫是另一回事）", a)
+	}
 	if len(mems) > 0 {
 		b.WriteString("\n（他的事, 只有他在场时才用得上; 别人在这个群里的事不在你的上下文里）\n")
 		for _, m := range mems {

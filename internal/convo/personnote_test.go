@@ -39,7 +39,7 @@ func TestPersonNote_OnlyTheSpeaker(t *testing.T) {
 	// ⚠️ 直接测渲染器 —— `dialogInput` 那条路要一个完整的 Engine, 而
 	// 这条不变量(谁的在、谁的不在)**在渲染器上就能钉死**。
 	a, _ := s.PersonMemories(scene, "10001")
-	note := PersonNoteLine("", "10001", a, nil)
+	note := PersonNoteLine("", "", "10001", a, nil)
 	if !strings.Contains(note, "甲是个牙医") {
 		t.Fatal("当前发言人的记忆没进注入")
 	}
@@ -58,10 +58,10 @@ func TestPersonNote_OnlyTheSpeaker(t *testing.T) {
 //
 // ⚠️ 空段会白占 token, 而且会让模型以为"关于他什么都不知道"是条信息。
 func TestPersonNote_ZeroValuesAddNothing(t *testing.T) {
-	if got := PersonNoteLine("小明", "10001", nil, nil); got != "" {
+	if got := PersonNoteLine("小明", "", "10001", nil, nil); got != "" {
 		t.Fatalf("没有记忆时不应当是空串以外的东西: %q", got)
 	}
-	if got := PersonNoteLine("", "", nil, nil); got != "" {
+	if got := PersonNoteLine("", "", "", nil, nil); got != "" {
 		t.Fatalf("全零时不应当是空串以外的东西: %q", got)
 	}
 }
@@ -71,7 +71,7 @@ func TestPersonNote_ZeroValuesAddNothing(t *testing.T) {
 // ⚠️ 「**owner 标记绝不进注入**」 —— 把主人标进去等于在群里公示。
 // 与段 7 的发言流同一套锚: **只用 uin 尾号**。
 func TestPersonNote_NoOwnerMarkerAndNoFullUIN(t *testing.T) {
-	note := PersonNoteLine("纳西妲", "3487037837", []PersonMemory{
+	note := PersonNoteLine("纳西妲", "", "3487037837", []PersonMemory{
 		{MemID: "m1", Label: "职业", V: "牙医"},
 	}, nil)
 	if !strings.Contains(note, "7837") {
@@ -94,7 +94,7 @@ func TestPersonNote_NoOwnerMarkerAndNoFullUIN(t *testing.T) {
 func TestPersonNote_StableFactsAreSeparate(t *testing.T) {
 	mems := []PersonMemory{{MemID: "m1", Label: "职业", V: "牙医"}}
 	facts := []PersonMemory{{MemID: "f1", Label: "城市", V: "上海"}}
-	note := PersonNoteLine("小明", "10001", mems, facts)
+	note := PersonNoteLine("小明", "", "10001", mems, facts)
 	if !strings.Contains(note, "牙医") || !strings.Contains(note, "上海") {
 		t.Fatalf("两块都要在:\n%s", note)
 	}
@@ -115,7 +115,7 @@ func TestPersonNote_ReachesThePrompt(t *testing.T) {
 	}
 	with := d.buildSystem(DialogInput{
 		UserText: "在吗", SceneKey: "group:1",
-		PersonNote: PersonNoteLine("小明", "10001", []PersonMemory{{MemID: "m1", Label: "职业", V: "牙医"}}, nil),
+		PersonNote: PersonNoteLine("小明", "", "10001", []PersonMemory{{MemID: "m1", Label: "职业", V: "牙医"}}, nil),
 	}, p, "ja")
 	if !strings.Contains(with, "牙医") {
 		t.Fatal("**PersonNote 没进提示词** —— 那条接线是空的")

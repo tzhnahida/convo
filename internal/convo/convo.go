@@ -607,7 +607,8 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 		pm, perr := e.Store.PersonMemories(in.SceneKey, uin)
 		gf, gerr := e.Store.PersonGlobalFacts(uin)
 		if perr == nil && gerr == nil {
-			in.PersonNote = PersonNoteLine(e.displayNameOf(in.SceneKey, uin), uin, pm, gf)
+			nm, addr := e.displayNameOf(in.SceneKey, uin)
+			in.PersonNote = PersonNoteLine(nm, addr, uin, pm, gf)
 		}
 	}
 	in.Pending, _ = e.Store.PendingMemories()
