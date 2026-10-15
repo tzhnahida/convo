@@ -77,6 +77,12 @@ type DialogInput struct {
 	SceneKey string
 	// SpeakerUIN 群里的发言人 (§6.10.1: 身份锚是 uin, 不是昵称)。
 	SpeakerUIN string
+	// PersonNote §6.10.3 **主体分区注入**: 「关于**这一轮说话的人**」那一块。
+	//
+	// ⚠️ 它与 `Memories` **不是一回事**: `Memories` 是**按场景**取的(整个群的),
+	// 而这一块是**按人**取的 —— 设计稿要的是后者 + 群公共层, 不是"整个群的记忆"。
+	// ⚠️ 空串 = 没有(没人/没记忆) → 一个字都不进提示词。
+	PersonNote string
 	// Stance §6.3 的三态裁决结果 (空 = 私聊路径, 不做价值判断)。
 	Stance SpeakStance
 	// StanceReason 裁决理由的原话 —— **只进轨迹, 不进 prompt**。
@@ -351,6 +357,16 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 				fmt.Fprintf(&b, "- %s\n", m.V)
 			}
 		}
+	}
+
+	// §6.10.3 **主体分区注入**: 「关于这一轮说话的人」。
+	//
+	// ⚠️ 放在**段 5 之内**(不新开段号) —— 段序是缓存策略,
+	// 新开一个段号会毁掉它后面所有稳定段的前缀缓存(§8.1)。
+	// ⚠️ 而它必须**紧跟**段 5 的按场景记忆: 两者都是"你记得的事",
+	// 中间插进别的东西会让模型把它们当成两批不同的来源。
+	if in.PersonNote != "" {
+		b.WriteString(in.PersonNote)
 	}
 
 	// 段 5c: §3.6.8 事件沉降 —— 它最近遇到的事, 按阶段给不同粒度

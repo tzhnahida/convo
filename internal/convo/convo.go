@@ -618,6 +618,23 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 	if in.Association == "" {
 		in.Association = e.assocNote(in.SceneKey, in.UserText)
 	}
+	// §6.10.3 **主体分区注入** —— 只注入"关于**当前发言人**"的那一份。
+	//
+	// ⚠️ 两个数据源, 门槛不同:
+	//   · `PersonMemories`   = 关系记忆(在这个场景里关于这个人);
+	//   · `PersonGlobalFacts`= **稳定事实** —— R7 规定它"只在他本人在场时可用",
+	//     而他正在说话, 所以此刻**正是**它唯一该出现的时候。
+	//
+	// ⚠️ **只在群场景且 uin 非空时取** —— 私聊没有"当前发言人"这回事,
+	// 那里整段对话本来就只关于一个人。
+	// ⚠️ 两个查询都失败 → 空串, **一个字都不进提示词**(失败往"少说"倒, 不编)。
+	if uin := strings.TrimSpace(in.SpeakerUIN); uin != "" && SceneKindOf(in.SceneKey) == SceneKindGroup {
+		pm, perr := e.Store.PersonMemories(in.SceneKey, uin)
+		gf, gerr := e.Store.PersonGlobalFacts(uin)
+		if perr == nil && gerr == nil {
+			in.PersonNote = PersonNoteLine(e.displayNameOf(in.SceneKey, uin), uin, pm, gf)
+		}
+	}
 	in.Pending, _ = e.Store.PendingMemories()
 	in.LastSummary, _ = e.Store.LastSessionSummary()
 	in.Lang = e.Lang
