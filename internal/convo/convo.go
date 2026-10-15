@@ -1362,7 +1362,6 @@ func (e *Engine) stepTick(ctx context.Context) {
 		PendingReply:         due,
 		SilentDays:           e.silentDays(),
 		StealRoll:            Dice(100),
-		DelayMin:             30 + Dice(61),
 		OpenJitterRoll:       Dice(100),
 		HasLastOpen:          hasLast,
 		MinutesSinceLastOpen: lastAgo,

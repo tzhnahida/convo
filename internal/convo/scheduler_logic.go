@@ -30,8 +30,17 @@ type TickInput struct {
 	MinutesSinceLastOpen int  // 距上一条主动开场的分钟数
 
 	// 随机骰子 (外部掷好注入 — 测试可钉死)
-	StealRoll      int // 0-99 (slack 偷回判定, < SlackStealPct 则偷)
-	DelayMin       int // busy 延迟分钟 (已掷, 30-90)
+	StealRoll int // 0-99 (slack 偷回判定, < SlackStealPct 则偷)
+	// ⚠️ 这里原来有一个 `DelayMin int // busy 延迟分钟 (已掷, 30-90)` —— **已删**。
+	//
+	// ⚠️ 而它**掷了却没人读** ✗: `convo.go` 那一侧每次都 `DelayMin: 30 + Dice(61)` ✓,
+	// 而 `DecideTick` **一个分支都不用** `in.DelayMin` ✓, `TickAction` 也不填它 ✓。
+	//
+	// ⇒ 真正的延迟由**消费者**自己掷: `scheduleDelayedReply` 读
+	// `BusyDelayMin/Max`(配置 ✓, 带默认 ✓) 再 `Dice` ✓ —— **那条路是对的** ✓。
+	//
+	// ⚠️ 而这一对死字段的害处不是"算了不用", 是**误导**:
+	// 读到这里的人会以为那一掷决定了它隔多久回 ✓, 而它与延迟毫无关系 ✗。
 	OpenJitterRoll int // 0-99 (主动开场抖动, < OpenJitterPct 才发 — 避免"槽一开就发")
 
 	// §8.3 情绪污染: 心情直接进说话决策器 (系统持有, 不是模型的自我报告)。
@@ -74,7 +83,8 @@ type TickAction struct {
 	Kind   string // none | preview | active_open | noinput | return_greet | steal_reply | delayed_reply | break_focus
 	Reason string
 	// 延迟回复参数 (delayed_reply 用)
-	DelayMin int
+	// ⚠️ 这里原来有一个 `DelayMin int` —— **已删**, 与 `TickInput` 那个同理 ✓。
+	// 延迟由消费者掷 (`scheduleDelayedReply`) ✓。
 }
 
 const (
