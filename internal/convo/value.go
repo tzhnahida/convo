@@ -362,6 +362,14 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 	// ⚠️ 放在这里而不是"裁决通过之后": 沉默档也是互动 ——
 	// 群里聊得热火朝天而它一直在看, 那也是它参与了那个场景。
 	e.NoteSceneHeat(sc.SceneKey, sc.UIN, sc.TS)
+	// §7.4 **遗忘权**: 群里**任何人**说"别记我" (设计稿 L1582「任何人说」)。
+	//
+	// ⚠️ 主体是**说话人那个 uin**, 不是群 —— 遗忘权是**人的**权利,
+	// 而 `ForgetSubject` 删的是关于这个人的东西(`convo_memory_person` 按 uin 全覆盖)。
+	//
+	// ⚠️ 而它**不参与裁决**: 就算这一轮它决定沉默, 遗忘权也已经执行了 ——
+	// 挂在裁决之后的话, 沉默那条路会让用户的请求整条失效。
+	e.noteForgetRequest(sc.UIN, sc.Text)
 	// §12 三态埋点: **每条群消息都记一次**, 沉默也记。
 	// 只记"说话"的那些, 沉默率就永远是 100%。
 	defer func() {

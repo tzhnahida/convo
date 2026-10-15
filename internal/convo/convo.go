@@ -277,6 +277,16 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		}
 		return nil
 	}
+	// §7.4 **遗忘权**: 用户在对话里说"别记我"。
+	//
+	// ⚠️ **放在这里而不是某条分支里**: 遗忘权优先于一切社交判断 ——
+	// 设计稿 L1859 明写「遗忘权**不能被"它学到的边界"覆盖**」。
+	// 放到后面的话, 任何一条提前 return 的分支都会让它整条失效。
+	//
+	// ⚠️ 而它**不短路**: 它照常回一句话, 只是**从此不再记得这个人**。
+	// 短路会让"说了别记我"变成一个系统提示音, 而不是一次对话。
+	e.noteForgetRequest(e.ownerKey(), text)
+
 	// 1. 上次 ask 被拒? → 黑名单 + 小失望注入
 	rejection, _ := e.Store.RejectionEvent()
 	if rejection != "" && DetectRejection(text) {

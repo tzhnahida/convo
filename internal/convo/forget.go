@@ -26,15 +26,62 @@ import (
 //
 // ⚠️ **宁可宽**: 误判的代价是"少记了一点", 漏判的代价是"用户说过别记我而它还在记"。
 // 这两件事不对称, 所以这张表刻意宽松。
-var forgetPhrases = []string{
-	"别记我", "别记住我", "不要记我", "忘了我", "把我忘掉", "别记了",
-	// 「忘了吧 / 忘掉吧」这类**没有宾语**的说法也要收 —— 判据刻意宽松:
-	// 误判的代价是"少记了一点", 漏判的代价是"用户说过别记我而它还在记"。
-	"忘了吧", "忘掉吧", "忘掉这些", "别记这些", "不要记这些",
-	"删掉我的", "删除我的记忆", "别存我的", "不要存我",
+// ⚠️ **句式表分成两栏 —— 因为这两栏的动作完全不同。**
+//
+// 设计稿 L1582/L1859 只给了一句话:
+//
+//	> **遗忘权**: 任何人说"**别记我**" → **物理删除**该主体的全部记忆,
+//	> 且不可被它的社会学习逆转。
+//
+// ⚠️ 而 `ForgetSubject` 做的是**物理删除 + 立碑**(碑一立, 这个人**从此**不再被记)。
+// 于是原来那句免责说明 ——「误判的代价是"少记了一点"」—— **在删除面前是错的**:
+//
+//	误判一次 = 这个人**永久地**从它的记忆里消失, 而且不会恢复。
+//
+// ⇒ 所以分两栏:
+//
+//	· `forgetErasePhrases` —— **明确指向"记"**的说法(设计稿那一句及其同族)
+//		  → 走**删除 + 立碑**;
+//	· `forgetSoftPhrases`  —— **可能指别的事**的说法(「忘了吧」可以是在说某件具体的事)
+//		  → **只记日志, 不删**。
+//
+// ⚠️ 这个分栏**是我的判断, 不是设计稿写的** —— 设计稿只规定了「别记我」那一条。
+// 我选了**保守**那一侧(少删), 并把它记进排障记录等 owner 拍板。
+var forgetErasePhrases = []string{
+	"别记我", "别记住我", "不要记我", "别记了",
+	"忘了我", "把我忘掉", "删掉我的", "删除我的记忆", "别存我的", "不要存我",
 }
 
-// ForgetRequested 这句话是不是在行使遗忘权。
+// forgetSoftPhrases 含糊的 —— 只记日志, **绝不删**。
+var forgetSoftPhrases = []string{
+	"忘了吧", "忘掉吧", "忘掉这些", "别记这些", "不要记这些",
+}
+
+// forgetPhrases 两栏合起来 —— `ForgetRequested` 用它(语义不变)。
+var forgetPhrases = append(append([]string{}, forgetErasePhrases...), forgetSoftPhrases...)
+
+// ForgetEraseRequested 这句话是不是**明确指向"记"**的遗忘请求 ——
+// 也就是**唯一**该走"物理删除 + 立碑"那一档。
+//
+// ⚠️ 它与 `ForgetRequested` 的差别就是两栏的差别(见上面的说明):
+// 后者含含糊糊的那些也认, 而**含糊的话不该触发不可逆的删除**。
+func ForgetEraseRequested(text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return false
+	}
+	for _, p := range forgetErasePhrases {
+		if strings.Contains(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// ForgetRequested 这句话是不是在行使遗忘权 (两栏都算)。
+//
+// ⚠️ 判据刻意宽松**是对的**: 漏判的代价是"用户说过别记我而它还在记"。
+// 而**动作**那一侧才需要收窄 —— 那是 `ForgetEraseRequested` 的事。
 func ForgetRequested(text string) bool {
 	t := strings.TrimSpace(text)
 	if t == "" {

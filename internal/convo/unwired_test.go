@@ -148,7 +148,6 @@ var knownUnwired = map[string]bool{
 	"FallbackRate":             true,
 	"FatigueQuotaProjection":   true,
 	"FeedbackBoundaryLine":     true,
-	"ForgetRequested":          true,
 	"GroupRoleLabel":           true,
 	"HabitFromMemories":        true,
 	"ImageFiles":               true,
