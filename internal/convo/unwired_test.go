@@ -160,7 +160,6 @@ var knownUnwired = map[string]bool{
 	"LastSceneMessageAt":       true,
 	"LoadFold":                 true,
 	"LongMemoryDecay":          true,
-	"MarkAmends":               true,
 	"NightDisablesNightSocial": true,
 	"NightTierStatsSnapshot":   true,
 	"OnUserMessage":            true,

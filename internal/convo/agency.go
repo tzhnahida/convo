@@ -931,23 +931,37 @@ func (s *Store) BreachStreak(now time.Time) (int, error) {
 //
 // 口径: 连续毁约到上限 **且** 最近那次毁约还没找补。
 func (s *Store) CompensationOwed(now time.Time) (bool, error) {
+	id, err := s.PendingAmendsID(now)
+	return id != 0, err
+}
+
+// PendingAmendsID 最近那次**还没找补**的毁约 id (0 = 不欠)。
+//
+// ⚠️ **单一真源**: `CompensationOwed` 现在就是它的薄包装 ——
+// 两处各写一遍那段遍历, 早晚会在"看哪一条"上分叉,
+// 而分叉的表现是「欠着补偿却不解锁」或反过来。
+func (s *Store) PendingAmendsID(now time.Time) (int64, error) {
 	streak, err := s.BreachStreak(now)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	if streak < AgencyBreachStreakMax {
-		return false, nil
+		return 0, nil
 	}
 	list, err := s.agSettledSince(now, 0)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	for _, a := range list {
 		if agIsBreach(a.Terminal) {
-			return a.AmendsTS == "", nil // 只看最近那一次毁约
+			// ⚠️ **只看最近那一次毁约** —— 更早找补过的不算。
+			if a.AmendsTS == "" {
+				return a.ID, nil
+			}
+			return 0, nil
 		}
 	}
-	return false, nil
+	return 0, nil
 }
 
 // MayCommit 是否还允许"主动约定" (M8③: 信用低 → 只能聊不能约)。
