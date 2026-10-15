@@ -172,7 +172,6 @@ var knownUnwired = map[string]bool{
 	"Reliability":              true,
 	"ResetEventGenStats":       true,
 	"ResetNightTierStats":      true,
-	"ResolveConflict":          true,
 	"RetireCastMember":         true,
 	"SaveInterruption":         true,
 	"SaveMood":                 true,

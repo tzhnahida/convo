@@ -102,12 +102,31 @@ func (e *Engine) conflictWindowOf(sceneKey string, n int) ([]ConflictMsg, Confli
 //
 // ⚠️ **失败方向**: 读不到的场景信息一律**留空**(= 未提供), 由判定内部决定不生效 ——
 // 而不是在这里填一个默认值把某条硬线打开。
-func (e *Engine) conflictContextOf(sceneKey string, cmsgs []ConflictMsg, selfUIN string) ConflictContext {
+func (e *Engine) conflictContextOf(sceneKey string, cmsgs []ConflictMsg, selfUIN string) (ConflictContext, error) {
 	ctx := ConflictContext{SceneKey: sceneKey}
 	if e.Store == nil {
-		return ctx
+		return ctx, nil
 	}
-	if sc, err := e.Store.LoadScene(sceneKey); err == nil && sc != nil {
+	// ⚠️ **读失败必须报出来, 不许吞。**
+	//
+	// 原来这里是 `if sc, err := ...; err == nil && sc != nil` —— 错误被静默丢掉。
+	// 后果不是"少了一点信息", 而是**方向错了**:
+	//
+	//   · `ctx.Stage` 留空 → A1「阶段=陌生 → 不掺和」**不触发**
+	//     → 一次读库失败把它推向**更容易介入**的那一侧;
+	//   · 而"故障"与"未提供"在日志里**长得一模一样**。
+	//
+	// ⚠️ 而 `ResolveConflict` 的注释把这条界线钉死了:
+	// 「`ctxErr != nil`(读库失败) → ConflictNormal; `ctx.Undecidable` → ConflictSilent;
+	//   **把两者并成一条, 就是 R28 写错的样子。**」
+	//
+	// ⚠️ **只有"读失败"算故障**: 场景行**不存在**是"未提供"(留空, 照常走判据) ——
+	// 两者在这一行上分开, 而不是在调用方各自解释(P7: 静默的不是数据库, 是调用方)。
+	sc, err := e.Store.LoadScene(sceneKey)
+	if err != nil {
+		return ctx, err
+	}
+	if sc != nil {
 		ctx.Stage = sc.Stage
 		ctx.SelfRole = sc.SelfRole
 	}
@@ -129,7 +148,7 @@ func (e *Engine) conflictContextOf(sceneKey string, cmsgs []ConflictMsg, selfUIN
 		}
 	}
 	_ = selfUIN
-	return ctx
+	return ctx, nil
 }
 
 // withConflict §6.9 的**覆盖规则出口** —— 每一条出口都必须过它。
@@ -166,8 +185,21 @@ func (e *Engine) applyConflictGate(sc SceneMsg, res *GroupGateResult) {
 	if !ok {
 		return
 	}
-	ctx := e.conflictContextOf(sc.SceneKey, cmsgs, e.Cfg.Channel.SelfQQ)
-	dec := e.Store.GateConflict(sc.SceneKey, cmsgs, ctx, pol, sc.TS)
+	ctx, ctxErr := e.conflictContextOf(sc.SceneKey, cmsgs, e.Cfg.Channel.SelfQQ)
+	// §6.1 **故障与判不出来必须分得开** —— 冲突那一侧。
+	//
+	// ⚠️ 读库失败 → `ConflictNormal`: **不沉默也不介入**, 照常走正常说话路径。
+	// 这一支是**硬要求**(纪律 #3「失败往正常说话倒」), 不是"少一点信息":
+	// 吞掉它的话, `Stage` 留空会让 A1 不触发, 于是故障把它推向**更容易介入**的一侧。
+	//
+	// ⚠️ 而"场景没那行"(未提供)**不走这一支** —— 它由 `GateConflict` 照常判。
+	var dec ConflictDecision
+	if ctxErr != nil {
+		dec = ResolveConflict(cmsgs, ConflictBaselineFrom(cmsgs, pol), ctx, ctxErr, pol)
+		log.Warn("convo:conflict", "场景状态读取失败 → 冲突判定让路: %s", dec.Why)
+	} else {
+		dec = e.Store.GateConflict(sc.SceneKey, cmsgs, ctx, pol, sc.TS)
+	}
 	// ConflictNormal = 不介入, **但照常走正常说话路径** —— 它不是沉默, 什么都不用改。
 	if dec.Verdict == ConflictNormal {
 		return
