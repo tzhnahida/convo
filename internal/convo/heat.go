@@ -631,26 +631,26 @@ func (s *Store) SpendHeat(sceneKey string, now time.Time, stage string, cfg Heat
 
 // ——— 读路径: 裁决时的唯一入口 ———
 
-// HeatQuotaAt 接线用的**唯一读路径**: 读事实 → 现算衰减 → 走 §4.3 的 min。
+// ⚠️ 这里原来有一个 `HeatQuotaAt` —— **已删**。
 //
-// 它与 LoadHeat 的差别就是**失败方向** (纪律 #2 / R13):
-// 表缺失、库坏了、读不出来 → 出 Warn + **退回常数配额** (与升级前逐字节相同),
-// 绝不 return 0 —— 那会让她因为一次读库失败整天不说话。
+// 它自称"接线用的唯一读路径", 而生产选了**另一条也是它自己写的那条**:
 //
-// 「该场景从未结算过」(ok=false) **不算失败**: 它就是热力 0 = 预算 0,
-// 陌生场景本来就不主动 (§4.3 的意图), 与"读不出来"是两回事。
-func (s *Store) HeatQuotaAt(sceneKey string, now time.Time, cfg HeatConfig, in HeatQuotaInput) int {
-	n := cfg.Normalized()
-	st, _, err := s.LoadHeat(sceneKey)
-	if err != nil {
-		log.Warn("convo:heat", "热力读库失败 (场景 %s): %v —— 本轮退回常数配额 %d", sceneKey, err, in.DailyCap)
-		in.Provided = false
-		return HeatQuotaFrom(in)
-	}
-	in.Heat = HeatAt(st, now, n.HalfLifeH)
-	in.Provided = true
-	return HeatQuotaFrom(in)
-}
+//	`stepTick` → `heatNow`(现值 + `HasHeat`) → 填纯函数 `TickInput`
+//	→ `DecideTick` 调 `HeatQuotaFrom`。
+//
+// ⚠️ 两条路**逐支等价**, 连**失败方向**都一样:
+//
+// | 情形 | 它 | 生产那条 |
+// |---|---|---|
+// | 读库失败 | `Provided=false` → 退回常数配额 | `heatNow` 返 `(0,false)` → `Provided=false` |
+// | 库里没那一行 | `Provided=true`, 热力 0 → 预算 0 | `heatNow` 返 `(0,true)` |
+// | 读到了 | 现算衰减 → `Provided=true` | 同 |
+//
+// 所以它是**同一条路的重写**, 不是缺失。(它多出来的那个 `sceneKey` 参数
+// 生产上也用不上 —— `heatNow` 钉在**私聊场景**, 而 `ai_opens` 正是私聊的。)
+//
+// ⚠️ 而它那两条断言(读失败退回常数配额 / 没记录 = 预算 0)**价值极高**,
+// 所以没有跟着删 —— 已经**改钉在生产那条路上**(见 heat_test.go 里的 `quotaOf`)。
 
 // ——— 审计流水 (可观测) ———
 

@@ -153,7 +153,6 @@ var knownUnwired = map[string]bool{
 	"GenerateDayPool":          true,
 	"GroupRoleLabel":           true,
 	"HabitFromMemories":        true,
-	"HeatQuotaAt":              true,
 	"ImageFiles":               true,
 	"ImageMark":                true,
 	"ImageSeen":                true,

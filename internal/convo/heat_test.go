@@ -434,12 +434,24 @@ func TestHeat_ReadFailureFallsBackToConstantQuota(t *testing.T) {
 	// 反面 (R13): 读库失败时 return 0 (当成没热力) → 这里得到 0 条, 红。
 	// 失败必须往"正常说话"倒: 退回常数配额。
 	in := HeatQuotaInput{DailyCap: 2, Provided: true} // 就算调用方声称有热力, 读不出来也不许沉默
-	if q := s.HeatQuotaAt("group:1", base, HeatConfig{}.Normalized(), in); q != 2 {
+
+	// ⚠️ **改钉在生产那一条路上** (`heatNow` + `HeatQuotaFrom`)。
+	//
+	// 原来这里调的是 `HeatQuotaAt` —— 它是一条与生产**逐支等价**的重复实现,
+	// 已删(§2.56)。而这条断言(读失败退回常数配额)**价值极高**, 所以不能跟着删:
+	// 它现在钉的是**真正会跑的那条路**, 比钉在一个重复实现上更强。
+	quotaOf := func(e *Engine, now time.Time, in HeatQuotaInput) int {
+		v, hasHeat := e.heatNow(now)
+		in.Heat, in.Provided = v, hasHeat
+		return HeatQuotaFrom(in)
+	}
+	e := &Engine{Store: s, Cfg: DefaultConfig()}
+	if q := quotaOf(e, base, in); q != 2 {
 		t.Fatalf("读库失败 → %d 条, 期望退回常数配额 2", q)
 	}
 	// 对照组: 表建好、没记录 = 热力 0 = 预算 0 (这不是失败, 与上面那条必须分开)
-	s2 := heatTestEnsured(t)
-	if q := s2.HeatQuotaAt("group:1", base, HeatConfig{}.Normalized(), in); q != 0 {
+	e2 := &Engine{Store: heatTestEnsured(t), Cfg: DefaultConfig()}
+	if q := quotaOf(e2, base, in); q != 0 {
 		t.Fatalf("库里没有该场景 → %d 条, 期望 0 (从未互动过 = 没有热力)", q)
 	}
 }
