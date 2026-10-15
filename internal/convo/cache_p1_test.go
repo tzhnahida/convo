@@ -103,7 +103,7 @@ func TestMemoryBatchFreeze(t *testing.T) {
 	seedSixMemories(t, store)
 
 	setNow(base.Add(1 * time.Minute))
-	batch1, err := store.TouchAndTopMemories(4)
+	batch1, err := store.TouchAndTopMemoriesFor("", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestMemoryBatchFreeze(t *testing.T) {
 
 	// 同一窗口 (10:00-10:30) 里推进 20 分钟 —— 批次必须不变
 	setNow(base.Add(20 * time.Minute))
-	batch2, err := store.TouchAndTopMemories(4)
+	batch2, err := store.TouchAndTopMemoriesFor("", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestMemoryBatchFreeze(t *testing.T) {
 
 	// 跨窗口 (10:40) —— 上一批已被 MarkInjected 降温, 必须换人
 	setNow(base.Add(40 * time.Minute))
-	batch3, err := store.TouchAndTopMemories(4)
+	batch3, err := store.TouchAndTopMemoriesFor("", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestMemoryBatchInvalidatedOnWrite(t *testing.T) {
 	seedSixMemories(t, store)
 
 	setNow(base.Add(1 * time.Minute))
-	if _, err := store.TouchAndTopMemories(4); err != nil {
+	if _, err := store.TouchAndTopMemoriesFor("", 4); err != nil {
 		t.Fatal(err)
 	}
 
@@ -226,7 +226,7 @@ func TestMemoryBatch_SameWindowRecomputeIsIdempotent(t *testing.T) {
 	seedSixMemories(t, store)
 
 	setNow(base.Add(1 * time.Minute))
-	batch1, err := store.TouchAndTopMemories(4)
+	batch1, err := store.TouchAndTopMemoriesFor("", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestMemoryBatch_SameWindowRecomputeIsIdempotent(t *testing.T) {
 	store.InvalidateMemoryBatch()
 
 	setNow(base.Add(2 * time.Minute)) // 仍在同一冻结窗口 (10:00-10:30)
-	batch2, err := store.TouchAndTopMemories(4)
+	batch2, err := store.TouchAndTopMemoriesFor("", 4)
 	if err != nil {
 		t.Fatal(err)
 	}

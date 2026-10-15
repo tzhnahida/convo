@@ -181,7 +181,6 @@ var knownUnwired = map[string]bool{
 	"TierReason":              true,
 	"TokenCount":              true,
 	"TopicKeysSorted":         true,
-	"TouchAndTopMemories":     true,
 	"Unwrap":                  true,
 	"WithDay":                 true,
 	"fmtStrain":               true,

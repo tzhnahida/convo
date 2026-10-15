@@ -441,9 +441,14 @@ func (s *Store) TouchMemory(memID string) error {
 //
 // injectPenalty 与 MarkInjected 因此回到**批次级**(每窗口一次)而非轮次级:
 // "检索诱导遗忘"的设计意图完整保留, 只是粒度对齐 §8.1 给记忆定的"慢"。
-func (s *Store) TouchAndTopMemories(limit int) ([]Memory, error) {
-	return s.TouchAndTopMemoriesFor("", limit)
-}
+// ⚠️ 这里原来有一个 `TouchAndTopMemories(limit)` —— **已删**。
+//
+// 它是一行包装: `return s.TouchAndTopMemoriesFor("", limit)` ✓ ——
+// 而**生产路径一律走带场景的那个** (§5.7: 缓存键是 (场景, 窗口) 二元组 ✓)。
+//
+// ⚠️ 而它多一个坏处: 它让**测试**走了一条生产不走的路 ✗ ——
+// `cache_p1_test.go` 那四条钉的是「冻结窗口缓存」这条性质 ✓,
+// 而那与场景无关 ⇒ 改走真函数, 性质一分不减 ✓。
 
 // TouchAndTopMemoriesFor 与 TouchAndTopMemories 同款, 但**按场景取** (§5.7)。
 //
