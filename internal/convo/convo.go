@@ -1711,6 +1711,30 @@ func (e *Engine) prepareDailyJobs(at time.Time) {
 	// ⚠️ 取用顺序的**唯一口径**在 NightRosterPlan (#11)。这里只负责"可能生成世界观"那一步副作用,
 	// 顺序本身交给它 —— 两处各写一遍必然漂开, 而漂开的症状正是 #11 本身
 	// (控制台说"缺名册", 而它昨晚实跑了 71 轮)。
+	// ── §4.4.1b / §3.7 **语域变硬时关闭夜间社交** ──
+	//
+	// ⚠️ `register.go` 的理由逐字抄:
+	//
+	//   「夜间社交模拟会**反过来污染**白天的语域(模拟出的对话进记忆)。
+	//     语域已经变硬时再叠一层模拟, 等于让"变硬"自我强化 ——
+	//     **这是本设计里唯一会正反馈的路径, 必须掐掉**。」
+	//
+	// ⚠️ 而 `DriftDisablesNightSocial` **从来没有调用者** ——
+	// 也就是说这条闸门**一直开着**, 而那是一条会自我强化的路。
+	//
+	// ⚠️ **失败方向是"照常跑"**(fail-open), 与"打扰那一侧"**相反**:
+	// 读不到语域 ≠ 语域变硬了。拿一次读库失败去停一个功能,
+	// 会让「昨晚没跑」和「它漂了」长得一模一样。
+	//
+	// ⚠️ 但**必须出声** —— 静默 fail-open 会让人以为闸门在工作
+	// (与 §2.57 那条"被红线挡住也要出声"同一条纪律)。
+	driftDir, driftKnown, driftErr := e.registerDriftDir()
+	nightBlocked := driftKnown && DriftDisablesNightSocial(driftDir)
+	if nightBlocked {
+		log.Warn("convo:engine", "§4.4.1b 语域变硬(%s) → **今夜不做夜间社交** (唯一会正反馈的路径)", driftDir)
+	} else if driftErr != nil {
+		log.Warn("convo:engine", "语域漂移读不到 → 夜间社交**照常跑**(读不到 ≠ 变硬了): %v", driftErr)
+	}
 	world := e.rosterFromWorld(context.Background(), nightProfile)
 	peers, peerSrc := NightRosterPlan(e.Store, e.ownerKey(), world, e.NightPeers)
 	if len(peers) > 0 {
@@ -1718,7 +1742,9 @@ func (e *Engine) prepareDailyJobs(at time.Time) {
 		// 不记的话,"控制台说缺名册"和"昨晚实跑了 71 轮"会一直同时成立。
 		log.Info("convo:engine", "§3.7 夜间名册: %d 人 (来源 %s)", len(peers), peerSrc)
 	}
-	if len(peers) == 0 {
+	if nightBlocked {
+		// 已经在上面的 Warn 里出过声了 —— 这里只是不走那一步。
+	} else if len(peers) == 0 {
 		// ⚠️ 必须出声: 静默跳过会让「同伴没配」和「模拟坏了」长得一模一样。
 		log.Warn("convo:engine", "§3.7 夜间社交跳过: 夜里没有任何名册可用 (世界观 cast 空 / 配置空 / convo_night_peer 空)")
 	} else if e.Chatter != nil && nightProfile != nil {

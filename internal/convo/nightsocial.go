@@ -467,8 +467,14 @@ func NightMemoryLine(m NightMemory) string {
 	return "昨天" + w + " — " + m.Text
 }
 
-// NightDisablesNightSocial 夜间社交的开关闸门 (§4.4.1b 语域变硬时关闭)。
-func NightDisablesNightSocial(driftDir string) bool { return DriftDisablesNightSocial(driftDir) }
+// ⚠️ 这里原来有一个 `NightDisablesNightSocial` —— **已删**。
+//
+// 它只是 `DriftDisablesNightSocial` 的**改名包装**, 而生产走的是后者
+// (`registerDriftDir` + 夜间批里的那道闸门)。
+//
+// ⚠️ 留着它的坏处不是"多一个函数": 它让**同一个判据有两个名字**,
+// 而下一个找"语域变硬时谁在挡"的人会 grep 到**没有调用者的那一个** ——
+// 于是看起来像"闸门没接线"。
 
 // ── 同伴名册 (手工维护, 落库以便管理页写入) ────────────────
 //
