@@ -120,9 +120,14 @@ type HeatConfig struct {
 	OwnerMultMax   float64            `yaml:"owner_mult_max"`   // ≤0 → 5
 }
 
-// DefaultHeatConfig 全部走内置默认的配置 (主控 overlay convo.yaml 时以它为底)。
-func DefaultHeatConfig() HeatConfig { return HeatConfig{}.Normalized() }
-
+// ⚠️ 这里原来有一个 `DefaultHeatConfig()` —— **已删**。
+//
+// 它的注释写着"主控 overlay convo.yaml 时以它为底", 而**那个 overlay 已经落地**
+// (走 `(*Engine).heatCfg` → `Cfg.Heat.Normalized()`)。
+// 而 config.go 里有一条明文裁决: 数值兜底**必须在 overlay 之后** ——
+// 放进一个"默认值函数"里的话, yaml 里显式写 0 的项会被"默认值 + yaml 的 0"覆盖成 0,
+// 于是"配错了"和"没配"长得一模一样。
+// 也就是说: 它**做不到它想做的事**, 而它的输出在生产里从没被读过一次。
 // Normalized 逐项兜底。**返回值是副本**, 不改调用方那份 (map 会被复制)。
 func (c HeatConfig) Normalized() HeatConfig {
 	out := c
@@ -202,9 +207,13 @@ func (c HeatConfig) CapOf(stage string) float64 {
 	}
 }
 
-// HeatCap 内置档位表的只读入口 (§5.6: cap 取场景级, 每次裁决现算, 不落库)。
-func HeatCap(stage string) float64 { return HeatConfig{}.CapOf(stage) }
-
+// ⚠️ 这里原来有一个 `HeatCap(stage)` —— **已删**。
+//
+// 它写死 `HeatConfig{}` → **忽略 yaml overlay**, 而生产上 cap 一律走
+// `heatCfg().CapOf(stage)`。留着它等于**留一个会说谎的读数**:
+// 谁拿它去控制台显示, 就会显示一个与真实上限**不同**的数 ——
+// 而那正是 §2.17「清掉说谎的读数」那一类。
+// 要读 cap 请用 `heatCfg().CapOf(stage)`。
 // HeatClamp 把热力夹到 [0, cap]。
 //
 // ⚠️ **cap ≤ 0 = 未提供上限 → 不下压**, 不是"上限为零" (纪律 #1)。

@@ -132,7 +132,7 @@ func TestHeatStageOf_MissingBondFallsToTheSmallestCap(t *testing.T) {
 	if got := e.heatStageOf("group:never-seen"); got != HeatStageStranger {
 		t.Fatalf("没有关系量的场景应当是 stranger, 实得 %q", got)
 	}
-	caps := DefaultHeatConfig()
+	caps := HeatConfig{}.Normalized()
 	if caps.CapOf(HeatStageStranger) >= caps.CapOf(HeatStageIntimate) {
 		t.Fatal("档位表坏了: stranger 的 cap 不该 ≥ intimate")
 	}

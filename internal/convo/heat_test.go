@@ -67,7 +67,7 @@ func heatTestFold(t *testing.T, s *Store, scene string, speakers []string, base 
 // ───────────────────────────────────────────────────────────────────────────
 
 func TestHeat_GainLadderIsATable(t *testing.T) {
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	if g := HeatGain(1, StateBusy, HeatMods{}, cfg); math.Abs(g-5.0) > 1e-9 {
 		t.Fatalf("本会话第 1 条 = %.3f, 期望 gain_open 5.0", g)
 	}
@@ -162,7 +162,7 @@ func TestHeat_SessionGapStartsNewWindow(t *testing.T) {
 
 func TestHeatGain_IsSceneSessionKeyed(t *testing.T) {
 	base := heatTestBase()
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	const n = 500
 
 	// 两段**时间线逐秒相同**的消息流, 只有发言人不同:
@@ -215,9 +215,9 @@ func TestHeatGain_IsSceneSessionKeyed(t *testing.T) {
 
 func TestHeat_ClampedAtStageCap(t *testing.T) {
 	base := heatTestBase()
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	s := heatTestEnsured(t)
-	capFamiliar := HeatCap(HeatStageFamiliar)
+	capFamiliar := (HeatConfig{}).CapOf(HeatStageFamiliar)
 	if capFamiliar != 60 {
 		t.Fatalf("familiar 上限 = %.0f, 期望 60", capFamiliar)
 	}
@@ -254,23 +254,23 @@ func TestHeat_ClampedAtStageCap(t *testing.T) {
 	}
 	// 上限是**场景级**的: 同一个库、同一段时间线, intimate 场景该能更热
 	// (这不是"给大群加戏", 是同一张档位表在不同 stage 下取值 —— A3 允许的规模差异)
-	if HeatCap(HeatStageIntimate) <= HeatCap(HeatStageStranger) {
+	if (HeatConfig{}).CapOf(HeatStageIntimate) <= (HeatConfig{}).CapOf(HeatStageStranger) {
 		t.Fatalf("阶段档位表不是单调的: stranger=%.0f intimate=%.0f",
-			HeatCap(HeatStageStranger), HeatCap(HeatStageIntimate))
+			(HeatConfig{}).CapOf(HeatStageStranger), (HeatConfig{}).CapOf(HeatStageIntimate))
 	}
 }
 
 func TestHeat_CapTable(t *testing.T) {
-	if HeatCap(HeatStageStranger) != 20 || HeatCap(HeatStageFamiliar) != 60 || HeatCap(HeatStageIntimate) != 100 {
+	if (HeatConfig{}).CapOf(HeatStageStranger) != 20 || (HeatConfig{}).CapOf(HeatStageFamiliar) != 60 || (HeatConfig{}).CapOf(HeatStageIntimate) != 100 {
 		t.Fatalf("档位表 = %.0f/%.0f/%.0f, 期望 20/60/100",
-			HeatCap(HeatStageStranger), HeatCap(HeatStageFamiliar), HeatCap(HeatStageIntimate))
+			(HeatConfig{}).CapOf(HeatStageStranger), (HeatConfig{}).CapOf(HeatStageFamiliar), (HeatConfig{}).CapOf(HeatStageIntimate))
 	}
 	// 未知 / 空白阶段 → 关系阶梯的下界 (与 convo_scene.stage DEFAULT 'stranger' 一致)
-	if HeatCap("") != 20 || HeatCap("nonsense") != 20 {
-		t.Fatalf("未知阶段没有落到 stranger: ''=%.0f nonsense=%.0f", HeatCap(""), HeatCap("nonsense"))
+	if (HeatConfig{}).CapOf("") != 20 || (HeatConfig{}).CapOf("nonsense") != 20 {
+		t.Fatalf("未知阶段没有落到 stranger: ''=%.0f nonsense=%.0f", (HeatConfig{}).CapOf(""), (HeatConfig{}).CapOf("nonsense"))
 	}
-	if HeatCap("Familiar") != 60 || HeatCap(" familiar ") != 60 {
-		t.Fatalf("大小写/空白敏感: Familiar=%.0f", HeatCap("Familiar"))
+	if (HeatConfig{}).CapOf("Familiar") != 60 || (HeatConfig{}).CapOf(" familiar ") != 60 {
+		t.Fatalf("大小写/空白敏感: Familiar=%.0f", (HeatConfig{}).CapOf("Familiar"))
 	}
 	// 配置覆盖 + 零值兜底: 反面 —— 把 ≤0 的 cap 当成"上限为 0" → 这里得 0, 红
 	cfg := HeatConfig{CapStranger: 7}
@@ -300,7 +300,7 @@ func TestHeat_ClampZeroCapMeansUnset(t *testing.T) {
 }
 
 func TestHeat_SlotStateWeights(t *testing.T) {
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	busy := HeatGain(1, StateBusy, HeatMods{}, cfg)
 	slack := HeatGain(1, StateSlack, HeatMods{}, cfg)
 	free := HeatGain(1, StateFree, HeatMods{}, cfg)
@@ -328,7 +328,7 @@ func TestHeat_SlotStateWeights(t *testing.T) {
 }
 
 func TestHeat_ModsAndOwnerCap(t *testing.T) {
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	base := HeatGain(1, StateBusy, HeatMods{}, cfg) // 5.0
 	if g := HeatGain(1, StateBusy, HeatMods{MoodLow: true}, cfg); math.Abs(g-base*0.5) > 1e-9 {
 		t.Fatalf("心情低 = %.3f, 期望减半 %.3f", g, base*0.5)
@@ -434,12 +434,12 @@ func TestHeat_ReadFailureFallsBackToConstantQuota(t *testing.T) {
 	// 反面 (R13): 读库失败时 return 0 (当成没热力) → 这里得到 0 条, 红。
 	// 失败必须往"正常说话"倒: 退回常数配额。
 	in := HeatQuotaInput{DailyCap: 2, Provided: true} // 就算调用方声称有热力, 读不出来也不许沉默
-	if q := s.HeatQuotaAt("group:1", base, DefaultHeatConfig(), in); q != 2 {
+	if q := s.HeatQuotaAt("group:1", base, HeatConfig{}.Normalized(), in); q != 2 {
 		t.Fatalf("读库失败 → %d 条, 期望退回常数配额 2", q)
 	}
 	// 对照组: 表建好、没记录 = 热力 0 = 预算 0 (这不是失败, 与上面那条必须分开)
 	s2 := heatTestEnsured(t)
-	if q := s2.HeatQuotaAt("group:1", base, DefaultHeatConfig(), in); q != 0 {
+	if q := s2.HeatQuotaAt("group:1", base, HeatConfig{}.Normalized(), in); q != 0 {
 		t.Fatalf("库里没有该场景 → %d 条, 期望 0 (从未互动过 = 没有热力)", q)
 	}
 }
@@ -512,7 +512,7 @@ func TestHeat_CostZeroMeansDefault(t *testing.T) {
 
 func TestHeat_ReplyNeverSpendsHeat(t *testing.T) {
 	base := heatTestBase()
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	s := heatTestEnsured(t)
 	// ⚠️ 用 intimate (cap 100) 而不是 stranger (cap 20): 后者会被上限压住,
 	// 于是"每条回话扣 25"也会被 0 地板吞掉 —— 测试就分辨不出来了。
@@ -587,7 +587,7 @@ func TestHeat_StoreRoundTripAndIdempotentSchema(t *testing.T) {
 		t.Fatalf("2 个半衰期后现值 = %.3f, 期望 10.5 (42/4)", v)
 	}
 	// 惰性结算: 把现值写回事实
-	res, err := s.SettleHeat("group:9", base.Add(72*time.Hour), HeatStageFamiliar, DefaultHeatConfig())
+	res, err := s.SettleHeat("group:9", base.Add(72*time.Hour), HeatStageFamiliar, HeatConfig{}.Normalized())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +609,7 @@ func TestHeat_StoreRoundTripAndIdempotentSchema(t *testing.T) {
 
 func TestHeat_LogRecordsActualDelta(t *testing.T) {
 	base := heatTestBase()
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	s := heatTestEnsured(t)
 
 	// 场景 A: 一次互动 (stranger cap 20, free 权重 3 → 15), 再一次 → 名义 11.7 但被上限截断

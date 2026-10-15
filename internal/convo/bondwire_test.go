@@ -97,7 +97,7 @@ func TestSceneBond_ClosenessCanActuallyRise(t *testing.T) {
 // 那不是 bug, 是设计本意("不向陌生人掏心窝子")——
 // 但它意味着"关系量必须真的能涨上去", 否则那条硬闸门永远关着。
 func TestStrangerCapCannotAffordAProactiveMessage(t *testing.T) {
-	cfg := DefaultHeatConfig()
+	cfg := HeatConfig{}.Normalized()
 	if got := HeatQuota(cfg.CapOf(HeatStageStranger), cfg.CostPerMsg, 2); got != 0 {
 		t.Fatalf("stranger 的 cap 居然买得起一条主动消息 (配额 %d) —— 前提变了, 这几条尺子要重看", got)
 	}
