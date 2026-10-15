@@ -24,3 +24,7 @@ convo.new
 .page-check.js
 .dsh-ops/
 .codegraph/
+
+# ——— 提交信息临时文件 (曾两次被 git add -A 捎进去) ———
+cmsg*.txt
+commitmsg*.txt
