@@ -187,15 +187,30 @@ func (s *Store) StartlePermit(now time.Time) (bool, error) {
 	return n < 1, nil
 }
 
-// StartleMaySend 睡眠窗内绝不发消息 (设计稿 665)。
+// StartleMaySend 睡眠窗内绝不发消息 (设计稿 665: **打扰红线, 优先级高于一切**)。
 //
 // ⚠️ 判据走**真实时钟** —— 加速时钟永远在 08:00-23:00,
 // 拿它判会让"睡眠窗内绝不发消息"这条红线被整条绕过。
+//
+// ⚠️ 而**它原来是拿 `CurrentState` 判的, 那是一个洞**:
+//
+//	`CurrentState` **只看 `ws.Days[].Slots`**, 从不看 `SleepStart`/`SleepEnd`。
+//	于是"睡眠窗内绝不发"这条红线**取决于日程排得够不够满**,
+//	而不是取决于睡眠窗本身 —— 一个 `Days` 为空的日程会让它返回 `StateFree`,
+//	红线**静默失效**(现象只是"它在半夜发了条消息")。
+//
+// ⚠️ 而设计稿说的就是「**睡眠窗**内」—— 所以判据应当是那个窗本身。
+// `inSleepWindow` 正是干这个的(读 `SleepStart`/`SleepEnd`, 支持跨午夜)。
+//
+// ⚠️ 这条是**红线**, 所以取**更难被绕过**的那个判据, 不是取更宽松的。
 func StartleMaySend(now time.Time, ws *WeekSchedule) bool {
 	if ws == nil {
-		return true // 没有日程 = 判不出睡眠窗 → 不拦 (失败往"能说"倒)
+		return true // 没有日程 = **未提供** → 不存在睡眠窗可违反
 	}
-	return CurrentState(ws, now) != StateSleep
+	// ⚠️ `SleepStart`/`SleepEnd` 为空时 `inSleepWindow` 返 false → 可以发:
+	// 那也是"未提供"(没有声明睡眠窗), 与"读失败"是两件事 ——
+	// 后者由调用方(`startleAsk`)拦下。
+	return !inSleepWindow(ws, now)
 }
 
 // StartleTarget 接收对象裁决。**返回值只有 owner 一种可能** ——

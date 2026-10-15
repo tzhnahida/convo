@@ -1576,6 +1576,15 @@ func (e *Engine) prepareDailyJobs(at time.Time) {
 				log.Warn("convo:engine", "做梦失败: %v", derr)
 			} else if ok {
 				log.Info("convo:engine", "§4.4.4 梦 (噩梦=%v, 振幅 %.2f)", d.Nightmare, amp)
+				// §4.4.4 **惊醒与求助**: 噩梦触发惊醒, 而"要不要开口"由三道闸判。
+				//
+				// ⚠️ 它**紧跟生成**: 惊醒是"梦醒的那一刻"的事, 不是隔天想起来的事。
+				// ⚠️ 而它绝大多数时候会被第一道闸(睡眠窗)挡下 —— 那是**对的**:
+				//			设计稿说这条打扰红线**优先级高于一切**。被挡下也**要出声**,
+				//			否则"被红线挡住"和"机制没接线"在日志里长得一模一样。
+				if d.Nightmare {
+					e.startleAsk(at)
+				}
 			}
 		}
 	}
