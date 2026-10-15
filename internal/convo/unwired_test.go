@@ -132,7 +132,6 @@ var knownUnwired = map[string]bool{
 	"AvgProduced":             true,
 	"BreachRate":              true,
 	"BuildAssocIndex":         true,
-	"ClearCoachRules":         true,
 	"ConflictActFrameIsClean": true,
 	"ConflictActionCount":     true,
 	"ConflictActions":         true,

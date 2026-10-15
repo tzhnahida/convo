@@ -121,6 +121,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/convo/owner_mult", s.routeOwnerMult)
 	// §6.x 插话收敛的安全阀: GET 看哪些群被抱怨过 / POST 放行一个群。
 	mux.HandleFunc("/api/v1/convo/chime", s.routeChime)
+	// 教练机的出口: GET 看生效中的规则 / POST 全部停用 (owner 想重新开始教)。
+	mux.HandleFunc("/api/v1/convo/coach", s.routeCoach)
 	mux.HandleFunc("/api/v1/convo/slang", s.routeSlang)
 	// §6.8 偏向可见 (「一个看不见偏向的群友, 比一个没有偏向的群友更危险」)
 	mux.HandleFunc("/api/v1/convo/bias", s.handleBiasGet)
