@@ -28,3 +28,7 @@ convo.new
 # ——— 提交信息临时文件 (曾两次被 git add -A 捎进去) ———
 cmsg*.txt
 commitmsg*.txt
+
+# ——— 运行时生成的配置 (base_url 每次跑仿真换一个随机端口) ———
+internal/sim/app.yaml
+internal/api/app.yaml
