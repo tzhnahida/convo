@@ -167,7 +167,6 @@ var knownUnwired = map[string]bool{
 	"SaveInterruption":        true,
 	"SaveMood":                true,
 	"SaveNight":               true,
-	"SaveScene":               true,
 	"SaveSceneMemory":         true,
 	"SceneMemoryInjection":    true,
 	"SceneMemoryOrigin":       true,

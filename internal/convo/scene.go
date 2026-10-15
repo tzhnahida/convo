@@ -256,39 +256,15 @@ type SceneMember struct {
 
 const sceneTSLayout = "2006-01-02 15:04:05"
 
-// SaveScene 写场景行 (upsert)。
-// first_seen_ts 只在**首次插入**时盖章 —— 它是事实, 不能被后续覆盖抹掉。
-func (s *Store) SaveScene(sc Scene) error {
-	if strings.TrimSpace(sc.SceneKey) == "" {
-		return fmt.Errorf("scene: scene_key 为空")
-	}
-	now := clock.TodayTS()
-	if sc.Kind == "" {
-		sc.Kind = SceneKindOf(sc.SceneKey)
-	}
-	if sc.Platform == "" {
-		sc.Platform = "qq"
-	}
-	if sc.Stage == "" {
-		sc.Stage = StageStranger
-	}
-	if sc.FirstSeenTS == "" {
-		sc.FirstSeenTS = now
-	}
-	if sc.UpdatedTS == "" {
-		sc.UpdatedTS = now
-	}
-	_, err := s.DB.Exec(`INSERT INTO convo_scene
-		(scene_key, kind, platform, group_id, peer_uin, self_role, stage, intimacy, first_seen_ts, last_msg_ts, updated_ts)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(scene_key) DO UPDATE SET
-			kind=excluded.kind, platform=excluded.platform, group_id=excluded.group_id,
-			peer_uin=excluded.peer_uin, self_role=excluded.self_role, stage=excluded.stage,
-			intimacy=excluded.intimacy, last_msg_ts=excluded.last_msg_ts, updated_ts=excluded.updated_ts`,
-		sc.SceneKey, sc.Kind, sc.Platform, sc.GroupID, sc.PeerUIN, sc.SelfRole, sc.Stage,
-		sc.Intimacy, sc.FirstSeenTS, sc.LastMsgTS, sc.UpdatedTS)
-	return err
-}
+// ⚠️ 这里原来有一个 `SaveScene`(全字段 upsert) —— **已删**。
+//
+// ⚠️ 它是一颗**有记录的地雷**: 下面 `EnsureScene` 的注释逐字写着
+// 「为什么**不直接用** `SaveScene`: 它的 `ON CONFLICT DO UPDATE` 会把
+//   `self_role` 与 `stage` 用**传入值**覆盖, 而它们在函数里被默认成 `""` / `stranger`」
+// —— 而群消息那条路是**每一轮**都要登记的。
+//
+// ⚠️ 它只被**测试**当成播种工具用(4 处)。**而接上生产是危险的** ——
+// 那正是 `EnsureScene` 存在的理由。所以: 删掉它, 把播种能力搬进测试文件。
 
 // EnsureScene 登记一个场景 —— **只插入, 绝不覆盖既有字段**。
 //

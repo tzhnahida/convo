@@ -1,6 +1,7 @@
 package convo
 
 import (
+	"github.com/tzhnahida/VocabLock/internal/clock"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func sceneTestSeedScene(t *testing.T, s *Store, key, kind string) {
 	} else {
 		sc.PeerUIN = ScenePeerOf(key)
 	}
-	if err := s.SaveScene(sc); err != nil {
+	if err := s.saveSceneSeed(sc); err != nil {
 		t.Fatalf("save scene %s: %v", key, err)
 	}
 }
@@ -878,7 +879,7 @@ func TestScene_SaveScene_PreservesFirstSeen(t *testing.T) {
 	// ⚠️ 刻意**注入一个过去的时刻**再断言它不变 —— 让实现自己盖"现在"是测不出来的:
 	// 同一秒内两次 SaveScene 会得到逐字节相同的字符串, 覆盖了也看不出来 (第一版就踩了这个坑)。
 	const seeded = "2020-01-01 00:00:00"
-	if err := s.SaveScene(Scene{SceneKey: sceneTestGroupA, Kind: SceneKindGroup, GroupID: "77777", FirstSeenTS: seeded}); err != nil {
+	if err := s.saveSceneSeed(Scene{SceneKey: sceneTestGroupA, Kind: SceneKindGroup, GroupID: "77777", FirstSeenTS: seeded}); err != nil {
 		t.Fatal(err)
 	}
 	first, err := s.LoadScene(sceneTestGroupA)
@@ -889,7 +890,7 @@ func TestScene_SaveScene_PreservesFirstSeen(t *testing.T) {
 		t.Fatalf("显式给的 first_seen_ts 没被尊重: %q", first.FirstSeenTS)
 	}
 	// 没给 first_seen_ts 时, 首次插入必须自己盖一个。
-	if err := s.SaveScene(Scene{SceneKey: sceneTestGroupB, Kind: SceneKindGroup, GroupID: "88888"}); err != nil {
+	if err := s.saveSceneSeed(Scene{SceneKey: sceneTestGroupB, Kind: SceneKindGroup, GroupID: "88888"}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := s.LoadScene(sceneTestGroupB)
@@ -901,7 +902,7 @@ func TestScene_SaveScene_PreservesFirstSeen(t *testing.T) {
 	}
 	// ★ 反面: first_seen_ts 是**事实**, 不许被后续 upsert 覆盖 (调用方通常不会带它)。
 	// 🔴 改坏成: ON CONFLICT DO UPDATE 里带上 first_seen_ts=excluded.first_seen_ts → 下面会变 → 红。
-	if err := s.SaveScene(Scene{SceneKey: sceneTestGroupA, Stage: StageFamiliar}); err != nil {
+	if err := s.saveSceneSeed(Scene{SceneKey: sceneTestGroupA, Stage: StageFamiliar}); err != nil {
 		t.Fatal(err)
 	}
 	third, err := s.LoadScene(sceneTestGroupA)
@@ -946,5 +947,75 @@ func TestScene_WritersRequireSubjectAndScene(t *testing.T) {
 	}
 	if got[0].Sensitivity != SensitivityRelation {
 		t.Fatalf("落库的 sensitivity 只允许 relation, 实得 %q", got[0].Sensitivity)
+	}
+}
+
+// saveSceneSeed **测试内**的场景播种 —— 原来那个生产函数 `SaveScene` 已删。
+//
+// ⚠️ 为什么删它: 它的 `ON CONFLICT DO UPDATE` 会**覆盖** `self_role` 与 `stage`,
+// 而群消息那条路**每一轮**都要登记场景 —— 那是 `EnsureScene` 存在的全部理由
+// (见它的注释)。**接上生产是危险的**, 而它只被测试当成播种工具用。
+//
+// ⚠️ 所以播种能力**搬进测试**: "把一行造出来"是测试的需要, **不该是一个生产 API**。
+func (s *Store) saveSceneSeed(sc Scene) error {
+	if sc.Kind == "" {
+		sc.Kind = SceneKindOf(sc.SceneKey)
+	}
+	if sc.Platform == "" {
+		sc.Platform = "qq"
+	}
+	if sc.Stage == "" {
+		sc.Stage = StageStranger
+	}
+	now := clock.TodayTS()
+	if sc.FirstSeenTS == "" {
+		sc.FirstSeenTS = now
+	}
+	if sc.UpdatedTS == "" {
+		sc.UpdatedTS = now
+	}
+	_, err := s.DB.Exec("INSERT INTO convo_scene"+
+		"(scene_key, kind, platform, group_id, peer_uin, self_role, stage, intimacy, first_seen_ts, last_msg_ts, updated_ts) "+
+		"VALUES(?,?,?,?,?,?,?,?,?,?,?) "+
+		"ON CONFLICT(scene_key) DO UPDATE SET kind=excluded.kind, platform=excluded.platform, "+
+		"group_id=excluded.group_id, peer_uin=excluded.peer_uin, self_role=excluded.self_role, "+
+		"stage=excluded.stage, intimacy=excluded.intimacy, last_msg_ts=excluded.last_msg_ts, "+
+		"updated_ts=excluded.updated_ts",
+		sc.SceneKey, sc.Kind, sc.Platform, sc.GroupID, sc.PeerUIN, sc.SelfRole, sc.Stage,
+		sc.Intimacy, sc.FirstSeenTS, sc.LastMsgTS, sc.UpdatedTS)
+	return err
+}
+
+// TestScene_EnsureScene_PreservesFirstSeen **钉在生产路径上**。
+//
+// ⚠️ 原来那条 `TestScene_SaveScene_PreservesFirstSeen` 测的是 `SaveScene` ——
+// 而它已删(它只被测试用, 且**接上生产是危险的**: 它会覆盖 `self_role` 与 `stage`)。
+//
+// ⚠️ 而那条性质 ——「`first_seen_ts` 是**事实**, 不许被后续 upsert 覆盖」——
+// **在生产路径上是 `EnsureScene` 的**: 它的 `DO UPDATE SET` 里只有 `last_msg_ts` ✓。
+// ⇒ 所以按"用例要钉生产路径"那条规矩, 它改钉在这里 ✓。
+//
+// ⚠️ 而这里**刻意把 first_seen_ts 拨回过去**再断言它不变 ——
+// 让实现自己盖"现在"是测不出来的: 同一秒内两次会得到逐字节相同的字符串。
+func TestScene_EnsureScene_PreservesFirstSeen(t *testing.T) {
+	s := sceneTestStore(t)
+	const seeded = "2020-01-01 00:00:00"
+	if err := s.EnsureScene(sceneTestGroupA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec("UPDATE convo_scene SET first_seen_ts=? WHERE scene_key=?",
+		seeded, sceneTestGroupA); err != nil {
+		t.Fatal(err)
+	}
+	// 再走一遍 —— 这一次一定落到 ON CONFLICT 那条分支上。
+	if err := s.EnsureScene(sceneTestGroupA); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadScene(sceneTestGroupA)
+	if err != nil || got == nil {
+		t.Fatalf("load scene: %v %v", got, err)
+	}
+	if got.FirstSeenTS != seeded {
+		t.Fatalf("**first_seen_ts 被冲突分支覆盖了**: %q, 期望 %q", got.FirstSeenTS, seeded)
 	}
 }
