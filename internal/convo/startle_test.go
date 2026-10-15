@@ -143,3 +143,52 @@ func TestStartle_SendFailureDoesNotBurnTheQuota(t *testing.T) {
 		t.Fatal("发送失败之后那次没发出去 —— 那这个月就白瞎了")
 	}
 }
+
+// TestStartleMaySend_TakesTheUnionOfBothSources
+//
+// ⚠️ "睡没睡"有两个来源, 而它们**会打架**(`dayplangen.go` 记着这条实证:
+// 「一个"周三没有 sleep 槽"的日程会让它以为周三也要 23:30 睡」)。
+//
+// ⚠️ 所以红线只有一种安全的合取方式: **任一来源说"在睡", 就按在睡处理。**
+//
+// 第一版 `StartleMaySend` 只读了展示字段(`SleepStart`/`SleepEnd`) ——
+// 那样"槽表说在睡、展示字段说醒"时红线**会被绕过**,
+// 而绕过它正是这一条要防的事(半夜发一条"睡不着")。
+func TestStartleMaySend_TakesTheUnionOfBothSources(t *testing.T) {
+	// 03:00 —— **槽表**里是睡眠段。
+	night := time.Date(2026, 10, 16, 3, 0, 0, 0, time.Local)
+	// ⚠️ 而**展示字段**说这段时间是**醒的**(09:00-18:00)。
+	//
+	// ⚠️ 这正是缺口所在: 第一版只读展示字段 ⇒ 03:00 不在那个窗里 ⇒ **放行** ✗
+	// (把 `SleepStart/SleepEnd` 也写成"在睡"的话, 旧代码照样拦得住, 那就测不到东西)。
+	ws := &WeekSchedule{
+		SleepStart: "09:00", SleepEnd: "18:00",
+		Days: []DaySchedule{{Day: weekdayKey(night), Slots: []Slot{
+			{Start: "00:00", End: "06:00", State: StateSleep},
+		}}},
+	}
+	if StartleMaySend(night, ws) {
+		t.Fatal("**槽表说在睡, 而红线放行了** —— 两个来源必须取并集, 不是二选一")
+	}
+
+	// ⚠️ 反向: 展示字段说睡、槽表说醒 → 也要拦。
+	day := time.Date(2026, 10, 16, 14, 0, 0, 0, time.Local)
+	ws2 := &WeekSchedule{
+		SleepStart: "09:00", SleepEnd: "18:00", // 展示字段说在睡
+		Days: []DaySchedule{{Day: weekdayKey(day), Slots: []Slot{
+			{Start: "00:00", End: "23:59", State: StateFree},
+		}}},
+	}
+	if StartleMaySend(day, ws2) {
+		t.Fatal("展示字段说在睡, 而红线放行了")
+	}
+
+	// ⚠️ 而两个都说醒时**必须放行** —— 否则这条红线会把正常时段也堵死。
+	ws3 := &WeekSchedule{SleepStart: "23:30", SleepEnd: "07:30",
+		Days: []DaySchedule{{Day: weekdayKey(day), Slots: []Slot{
+			{Start: "00:00", End: "23:59", State: StateFree},
+		}}}}
+	if !StartleMaySend(day, ws3) {
+		t.Fatal("两个来源都说醒, 却拦住了 —— 那它永远发不出求助")
+	}
+}

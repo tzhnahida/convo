@@ -25,6 +25,6 @@ session_time_budget: 0
 max_slow_type_ratio: 0
 sm2_max_interval_days: 180
 ai:
-    base_url: http://127.0.0.1:61953
+    base_url: http://127.0.0.1:64120
     api_key: sim-key
     model: sim

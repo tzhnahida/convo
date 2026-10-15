@@ -207,10 +207,36 @@ func StartleMaySend(now time.Time, ws *WeekSchedule) bool {
 	if ws == nil {
 		return true // 没有日程 = **未提供** → 不存在睡眠窗可违反
 	}
-	// ⚠️ `SleepStart`/`SleepEnd` 为空时 `inSleepWindow` 返 false → 可以发:
-	// 那也是"未提供"(没有声明睡眠窗), 与"读失败"是两件事 ——
+	// ⚠️ **两个来源取并集, 不是二选一。**
+	//
+	// 系统里"睡没睡"有两个来源, 而它们**会不一致**:
+	//
+	// · **槽表**(`ws.Days[].Slots` 里 `state=sleep`) —— `CurrentState` 读它;
+	// · **展示字段**(`SleepStart`/`SleepEnd`) —— `inSleepWindow` 读它。
+	//
+	// ⚠️ 而 `dayplangen.go` 记着一条**它们会打架**的实证:
+	//
+	//   「一个"周三没有 sleep 槽"的日程会让它以为周三也要 23:30 睡 ——
+	//     而它排出来的行程会被 `ValidateDayPlan` 按**槽表**判, 两边对不上。」
+	//
+	// ⚠️ 所以对**红线**来说只有一种安全的合取方式:
+	//
+	// **任一来源说"在睡", 就按在睡处理。**
+	//
+	// · 槽表说睡、展示字段说醒 → **拦**(我第一版会放行 ✗)
+	// · 展示字段说睡、槽表说醒 → **拦**
+	// · 两个都说醒 → 放行
+	//
+	// 第一版我只读了展示字段 —— 那样"槽表说在睡"时红线**会被绕过**,
+	// 而绕过它正是这一条要防的事(半夜发一条"睡不着")。
+	//
+	// ⚠️ 而两者**都没有**声明睡眠时它才放行 ——
+	// 那是"未提供"(不存在睡眠窗可违反), 与"读失败"是两件事,
 	// 后者由调用方(`startleAsk`)拦下。
-	return !inSleepWindow(ws, now)
+	if inSleepWindow(ws, now) {
+		return false
+	}
+	return CurrentState(ws, now) != StateSleep
 }
 
 // StartleTarget 接收对象裁决。**返回值只有 owner 一种可能** ——
