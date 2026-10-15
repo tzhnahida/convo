@@ -168,7 +168,6 @@ var knownUnwired = map[string]bool{
 	"SceneMemoryInjection":    true,
 	"SceneMemoryOrigin":       true,
 	"SetEventGenBudget":       true,
-	"SetMemberAddress":        true,
 	"SetMemberStage":          true,
 	"SetMemberTaboo":          true,
 	"MoodLog":                 true,

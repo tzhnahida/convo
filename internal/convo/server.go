@@ -123,6 +123,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/convo/chime", s.routeChime)
 	// 教练机的出口: GET 看生效中的规则 / POST 全部停用 (owner 想重新开始教)。
 	mux.HandleFunc("/api/v1/convo/coach", s.routeCoach)
+	// §6.10.4 称呼的 owner 入口: GET 看成员 / POST 设一个人的称呼。
+	mux.HandleFunc("/api/v1/convo/member", s.routeMember)
 	mux.HandleFunc("/api/v1/convo/slang", s.routeSlang)
 	// §6.8 偏向可见 (「一个看不见偏向的群友, 比一个没有偏向的群友更危险」)
 	mux.HandleFunc("/api/v1/convo/bias", s.handleBiasGet)
