@@ -479,6 +479,17 @@ func main() {
 	convo.ResetFrameStats() // 帧协议指标从零开始 (报告里那一节依赖它)
 	convo.ResetPacingStats()
 	convo.ResetBodyStats()
+	// §3.6 / §4.4.3 **这两组也只在这里清** —— 它们的注释都写着
+	// 「**仿真每次运行开始时调用**」, 而在此之前**没有任何调用者**:
+	//
+	//	· `ResetEventGenStats`  —— 事件池的丢弃计数与原因分布;
+	//	· `ResetNightTierStats` —— 夜间分档的统计。
+	//
+	// ⚠️ 它们是**进程级全局量** —— 同一进程里跑第二遍仿真时,
+	// 第一遍的计数会**累加进第二遍的报告** ✗, 而报告看起来只是"数变大了"。
+	// ⚠️ 而 `SIM_START` 那个换季对照正是**同一进程跑多遍**的用法 ✓。
+	convo.ResetEventGenStats()
+	convo.ResetNightTierStats()
 
 	rng := rand.New(rand.NewSource(seed))
 	// 等待虚拟化: 打字延迟(5-25s)与分条间隔(1-10s)不再真睡 —— 仿真粒度是 1 分钟,
