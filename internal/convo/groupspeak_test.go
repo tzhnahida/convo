@@ -61,7 +61,7 @@ func groupSpeakEngine(t *testing.T, c Chatter) (*Engine, *groupCapSender) {
 func TestSpeakInGroup_GoesToGroupNotPrivate(t *testing.T) {
 	c := &sitCaptureChatter{}
 	e, snd := groupSpeakEngine(t, c)
-	if err := e.SpeakInGroup(context.Background(), "group:12345", 12345, "999", "在吗"); err != nil {
+	if err := e.SpeakInGroupSeeing(context.Background(), "group:12345", 12345, "999", "在吗", ""); err != nil {
 		t.Fatalf("SpeakInGroup: %v", err)
 	}
 	if len(snd.groupTexts) == 0 {
@@ -88,7 +88,7 @@ func TestSpeakInGroup_HistoryIsSceneScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 在 B 群发言。
-	if err := e.SpeakInGroup(context.Background(), "group:222", 222, "60002", "B 群问一句"); err != nil {
+	if err := e.SpeakInGroupSeeing(context.Background(), "group:222", 222, "60002", "B 群问一句", ""); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(c.lastSystem, "甲群机密暗号XYZ") {
@@ -133,7 +133,7 @@ func TestReactInGroup_ZeroLLMCalls(t *testing.T) {
 func TestSpeakInGroup_RefusedIsSilentlyDropped(t *testing.T) {
 	c := &awChatter{out: `{"reply":[{"kind":"text","text":"你最近都不理我"}]}`}
 	e, snd := groupSpeakEngine(t, c)
-	if err := e.SpeakInGroup(context.Background(), "group:12345", 12345, "999", "在吗"); err != nil {
+	if err := e.SpeakInGroupSeeing(context.Background(), "group:12345", 12345, "999", "在吗", ""); err != nil {
 		t.Fatalf("硬拒不该报错: %v", err)
 	}
 	if len(snd.groupTexts) != 0 {

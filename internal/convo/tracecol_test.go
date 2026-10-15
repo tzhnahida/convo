@@ -17,7 +17,7 @@ import (
 func TestRecordTrace_CarriesSceneAndStance(t *testing.T) {
 	c := &sitCaptureChatter{}
 	e, _ := groupSpeakEngine(t, c)
-	if err := e.SpeakInGroup(context.Background(), "group:12345", 12345, "999", "在吗"); err != nil {
+	if err := e.SpeakInGroupSeeing(context.Background(), "group:12345", 12345, "999", "在吗", ""); err != nil {
 		t.Fatalf("SpeakInGroup: %v", err)
 	}
 	tr, err := e.Store.RecentTraces(1)

@@ -90,7 +90,7 @@ func TestSpeakInGroup_ReadsTheNewTables(t *testing.T) {
 	if err := SaveRegisterVector(e.Store.DB, owner, "2099-01-01", RegisterVector{N: 12, AvgRunes: 3, Modal: 0, Sticker: 0}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.SpeakInGroup(context.Background(), sk, 12345, "999", "在吗"); err != nil {
+	if err := e.SpeakInGroupSeeing(context.Background(), sk, 12345, "999", "在吗", ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, mark := range []string{"【群里·你的位】", "【边界】", "【关系】", "【说话方式】", "【TA 说过的·打算】"} {
@@ -108,7 +108,7 @@ func TestSpeakInGroup_AssociationNeedsASharedCue(t *testing.T) {
 		Label: "猫", Confidence: 0.9, Source: "user_said"}, "active"); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.SpeakInGroup(context.Background(), "group:12345", 12345, "999", "我刚路过宠物店, 里面有只猫"); err != nil {
+	if err := e.SpeakInGroupSeeing(context.Background(), "group:12345", 12345, "999", "我刚路过宠物店, 里面有只猫", ""); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(c.lastSystem, "【联想】") {
@@ -121,7 +121,7 @@ func TestSpeakInGroup_AssociationNeedsASharedCue(t *testing.T) {
 		Label: "猫", Confidence: 0.9, Source: "user_said"}, "active"); err != nil {
 		t.Fatal(err)
 	}
-	if err := e2.SpeakInGroup(context.Background(), "group:12345", 12345, "999", "今天下雨了路上好堵"); err != nil {
+	if err := e2.SpeakInGroupSeeing(context.Background(), "group:12345", 12345, "999", "今天下雨了路上好堵", ""); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(c2.lastSystem, "【联想】") {

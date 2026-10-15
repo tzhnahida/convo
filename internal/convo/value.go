@@ -793,10 +793,19 @@ func (e *Engine) ReactInGroup(sceneKey string, groupID int64) error {
 //  2. **发到群** (GroupSender) 而不是发给人 —— 写成 SendText 会让它私聊给 owner;
 //  3. **入库标 origin/scene** —— 否则这条 AI 发言会被当成私聊消息进别人的上下文。
 //
-// SpeakInGroup 在群里说话 (不需要看图时用这个)。
-func (e *Engine) SpeakInGroup(ctx context.Context, sceneKey string, groupID int64, uin, text string) error {
-	return e.SpeakInGroupSeeing(ctx, sceneKey, groupID, uin, text, "")
-}
+// ⚠️ 这里原来有一个 `SpeakInGroup`(不看图的便捷包装) —— **已删**。
+//
+// ⚠️ 它不是"没人用", 而是**只有测试在用**(6 处) —— 而生产路径走的是
+// `SpeakInGroupSeeing`(`cmd/convo/main.go` 调它, 并把 lookPath 一起传)。
+//
+// ⚠️ **为什么删一个"用起来更顺手"的包装**:
+//
+//	· 它让**测试走了一条生产不会走的路** —— 而夹具该走真入口
+//	  (与前面几轮同一条规矩: 手搓捷径会掩盖真路径上的问题);
+//	· 而它上面对那三处差异的说明, **本来就是 `SpeakInGroupSeeing` 的性质**,
+//	  写在一个只有测试会经过的壳子上, 谁也不会在那里读到它。
+//
+// ⚠️ 那三处差异的说明**没有丢** —— 它们现在挂在下面对的地方。
 
 // SpeakInGroupSeeing 在群里说话, 并且**看着一张图说**。
 //

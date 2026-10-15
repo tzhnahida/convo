@@ -181,7 +181,6 @@ var knownUnwired = map[string]bool{
 	"MoodLog":                  true,
 	"SlangByPhrase":            true,
 	"SparkHasInterface":        true,
-	"SpeakInGroup":             true,
 	"StickerOnlyFrame":         true,
 	"SuspendedAt":              true,
 	"TasteCounts":              true,
