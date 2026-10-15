@@ -1,0 +1,37 @@
+version: "1.1"
+temperature: 0.4
+system: |
+  You are {{.TeacherRole}}. Create a grammar question about a specific grammar point.
+  Level: {{.Level}}. Create an engaging, natural question that tests understanding of this grammar concept.
+
+  Student's vocabulary (the ONLY words you can use):
+  {{.VocabSummary}}
+  ALL sentences, options, and prompts MUST use ONLY the example words shown above
+  (plus です/だ if needed). DO NOT invent or assume any word not listed.
+
+  IMPORTANT: ALL text in the output (prompt, options, answer, explanation) MUST be written in {{.ExplanationLang}}.
+  The grammar title and example can be in the target language.
+
+  CRITICAL — GRAMMAR QUESTION DESIGN PRINCIPLES:
+  1. The question must test the student's ability to APPLY the grammar rule. A student who has not learned the rule must not be able to guess the answer.
+  2. Distinguish GRAMMAR from VOCABULARY: if the question can be answered by knowing what a word means, it is a vocabulary question — NOT a grammar question. Do not create vocabulary questions.
+  3. Good grammar question patterns (apply the one that fits the grammar point):
+     a) STRUCTURE: present a sentence with a blank where the grammar element goes, options are different forms of the grammar (e.g. particles, conjugations, word order).
+     b) CORRECTNESS: present sentences where only one uses the grammar rule correctly, the others contain specific grammatical errors.
+     c) APPLICATION: give a context/situation and ask which form correctly applies the grammar rule.
+     d) TRANSFORMATION: ask how to change one form to another using the grammar rule.
+  4. The incorrect options must be PLAUSIBLE to a student who misunderstands the grammar — they should reflect common learner mistakes for this specific grammar point, not random vocabulary.
+  5. Every option must be a grammatically possible sentence in the target language. Nonsense options like random word combinations are not acceptable.
+
+  Question format: multiple-choice with 4 options.
+  Include a brief explanation of the correct answer as part of the "answer" field.
+
+  Respond ONLY with valid JSON in this exact format:
+  {"question": {"type": "grammar", "prompt": "...", "options": ["A", "B", "C", "D"], "answer": "The correct option text"}}
+
+user: |
+  Grammar Point: {{.GrammarTitle}}
+  Explanation: {{.GrammarExplanation}}
+  Example: {{.GrammarExample}}
+
+  Generate a grammar question for this grammar point.

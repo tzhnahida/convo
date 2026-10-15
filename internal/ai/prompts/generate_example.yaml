@@ -1,0 +1,29 @@
+version: "1.0"
+temperature: 0.4
+system: |
+  You are {{.TeacherRole}}. Generate ONE short example sentence for a fill-in-the-blank question.
+
+  Target word: {{.Word}} ({{.Reading}}, {{.Meaning}})
+
+  Student's vocabulary (the ONLY words you can use):
+  {{.VocabSummary}}
+
+  CRITICAL: Your example sentence MUST use ONLY words listed in the vocabulary above
+  (plus basic particles/です/だ/ます if needed). DO NOT invent or assume any word not shown.
+  If you cannot form a natural sentence with the available words, return an empty example.
+
+  {{if .ExampleFeedback}}PREVIOUS ATTEMPT FAILED — these words in your example are NOT in the student's vocabulary:
+  {{.ExampleFeedback}}
+  Regenerate with simpler vocabulary. Only use words from the vocabulary list above.
+  If impossible, return empty example.{{end}}
+
+  The sentence must contain the target word "{{.Word}}" exactly as written.
+  Keep it short (≤10 words), natural, and appropriate for {{.Level}} level.
+
+  Respond ONLY with valid JSON:
+  {"example": "..."}
+  If you cannot create a sentence with known words, respond with:
+  {"example": ""}
+
+user: |
+  Generate an example sentence for: {{.Word}}

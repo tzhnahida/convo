@@ -1,0 +1,166 @@
+lang:
+  code: zh
+  display_name: 中文
+  native_name: 中文
+
+tts:
+  provider: edge-tts
+  voice: zh-CN-XiaoxiaoNeural
+
+dict:
+  provider: cedict
+
+pronounce:
+  provider: ""
+
+question_types:
+  - choice
+  - fill
+  - pronounce
+  - listening
+  - reading_comp
+  - grammar
+  - read_word
+  - read_sentence
+
+prompt_context:
+  teacher_role: 中文教师
+  explanation_lang: zh-CN
+  level_descriptions:
+    beginner: "HSK1-2: 1-2句话，基础词汇"
+    intermediate: "HSK3-4: 3-4句话，日常对话"
+    advanced: "HSK5-6: 4-6句话，理解言外之意"
+
+word_fields_base:
+  - key: word
+    label: 词条
+    type: text
+  - key: reading
+    label: 拼音
+    type: text
+  - key: syllable_count
+    label: 音节数
+    type: text
+  - key: pos
+    label: 词性
+    type: select
+    options: [名词, 动词, 形容词, 副词, 介词, 连词, 量词, 代词, 助词, 叹词, 数词]
+  - key: meaning
+    label: 释义
+    type: text
+  - key: level
+    label: HSK等级
+    type: select
+    options: [HSK1, HSK2, HSK3, HSK4, HSK5, HSK6]
+  - key: morphology
+    label: 形态/构词
+    type: text
+  - key: syntax
+    label: 句法功能
+    type: text
+  - key: collocation
+    label: 常用搭配
+    type: text
+  - key: register
+    label: 语体
+    type: select
+    options: [口语, 书面语, 正式, 方言, 古语]
+  - key: etymology
+    label: 字源/词源
+    type: text
+  - key: example_sentence
+    label: 例句
+    type: text
+
+word_fields_dlc:
+  - category: writing
+    label: 书写
+    fields:
+      - key: stroke_count
+        label: 笔画数
+        type: text
+      - key: radical
+        label: 部首
+        type: text
+      - key: traditional_form
+        label: 繁体
+        type: text
+      - key: orthographic_variants
+        label: 异体字
+        type: text
+  - category: phonology
+    label: 语音
+    fields:
+      - key: tone_pattern
+        label: 声调组合
+        type: text
+      - key: homophones
+        label: 同音字
+        type: text
+  - category: syntax_usage
+    label: 句法/用法
+    fields:
+      - key: measure_word
+        label: 量词搭配
+        type: text
+      - key: resultative_complement
+        label: 结果补语
+        type: text
+      - key: separable
+        label: 离合用法
+        type: text
+  - category: semantics
+    label: 语义
+    fields:
+      - key: synonyms
+        label: 近义词
+        type: text
+      - key: antonyms
+        label: 反义词
+        type: text
+
+grammar_fields_base:
+  - key: explanation
+    label: 解释
+    type: text
+  - key: example
+    label: 例句
+    type: text
+  - key: pattern
+    label: 句型公式
+    type: text
+  - key: usage_notes
+    label: 使用要点
+    type: text
+
+grammar_fields_dlc:
+  - category: formality
+    label: 语体
+    fields:
+      - key: formality_level
+        label: 语体层级
+        type: select
+        options: [口语, 书面语, 正式, 方言, 不适用]
+  - category: pedagogy
+    label: 教学辅助
+    fields:
+      - key: common_mistakes
+        label: 常见错误
+        type: text
+      - key: related_points
+        label: 关联语法
+        type: text
+  - category: syntax
+    label: 句法位置
+    fields:
+      - key: sentence_position
+        label: 句中位置
+        type: text
+
+grammar_points:
+  - 量词（个/本/张/条）
+  - 把字句
+  - 被字句
+  - 了/过/着
+
+seed_words_file: seeds/zh.json

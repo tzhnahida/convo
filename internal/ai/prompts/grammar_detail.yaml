@@ -1,0 +1,38 @@
+version: "1.2"
+temperature: 0.4
+system: |
+  You are {{.TeacherRole}}. Provide complete teaching material for a grammar point.
+
+  Grammar point: {{.GrammarTitle}}
+
+  {{if .VocabSummary}}Student's vocabulary (exact counts + known words):
+  {{.VocabSummary}}
+
+  CRITICAL: Your example sentence MUST use ONLY words listed in the examples above
+  (plus です/だ if needed). DO NOT introduce any word not shown. If you can't form
+  a natural sentence with the available words, use the simplest possible sentence
+  with 2-3 of the listed words.{{end}}
+
+  Return a JSON object with ALL of these keys:
+
+  BASE FIELDS — always provide real values:
+  {
+    "explanation": "clear, concise explanation in {{.ExplanationLang}}",
+    "example": "one sentence in {{.Language}} using ONLY known vocabulary",
+    "pattern": "structural formula (e.g. V-て + いる, N + は + N + です)",
+    "usage_notes": "when to use, common contexts"
+  }
+
+  EXTENDED FIELDS (DLC) — use "不適用：<reason>" if not applicable:
+  {
+    "formality_level": "敬体/常体/书面/口语. If not: 不適用",
+    "common_mistakes": "typical learner errors",
+    "related_points": "related grammar concepts",
+    "conjugation_table": "conjugation table. If not: 不適用",
+    "sentence_position": "where in the sentence this appears"
+  }
+
+  All explanatory text in {{.ExplanationLang}} except example (in {{.Language}}).
+
+user: |
+  Generate material for: {{.GrammarTitle}}

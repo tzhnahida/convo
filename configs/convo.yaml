@@ -1,0 +1,64 @@
+# convo 拟人试跑进程配置 (P0, wiki §6.3 v2.3)
+# 部署: Pi systemd 常驻 (GOOS=linux GOARCH=arm64 交叉编译, 纯 Go 无 CGO)。
+# API key 永不写入本文件 — 用环境变量 CONVO_AI_KEY (Pi 端放 /etc/convo/ 下的
+# systemd EnvironmentFile)。
+
+# HTTP 管理端点 (PC 浏览器访问): Pi 用 0.0.0.0, 本机试跑用 127.0.0.1
+listen: "0.0.0.0:8420"
+data_dir: "data"
+db_file: "convo-trial.db"
+
+# 留空 → 首次启动生成 data/convo-token.txt; 管理页 URL: http://<主机>:8420/?token=<值>
+# token: ""
+
+ai:
+  base_url: https://api.deepseek.com
+  api_key: ""            # 或环境变量 CONVO_AI_KEY
+  model: deepseek-chat
+  vision_model: deepseek-v4-flash-vision-exp   # ⚠️ 实验模型 (2026-08-21 上线)
+
+channel:
+  driver: "onebot_v11"   # onebot_v11 | noop (noop = 仅落库日志, 本地开发)
+  api_base: "http://127.0.0.1:3001"   # NapCat HTTP API
+  ws_listen: "127.0.0.1:8421"         # NapCat 反向 WS 接入点 (同一台机)
+  access_token: ""
+  owner_qq: ""           # 你的 QQ 号 (小夜只对它说话) — 必填
+  self_qq: ""            # 小夜的 QQ 号 (登录后可回填)
+  link_signature: true   # 状态五档 → QQ 签名联动 (⚠️ NapCat 扩展接口, 待实测)
+
+# ——— §3.3 环境: 它那边的天气与城市 ———
+#
+# ⚠️ **不配 = 它的一天是空的** (2026-10-14 实测的根因)。
+# EnvSource 此前只在仿真/测试里被赋值, 生产从没接过 —— 于是:
+#   没有天气、没有城市、没有生活事件, 世界事件表 0 条,
+#   心情没有外部成因。角色不是不肯说自己的生活, 是**没有生活可说**。
+#
+# 数据源免费无 key: Open-Meteo (天气) + USGS (地震)。
+# city 是**显示名** (可以是角色世界观里的虚构城市), lat/lon 是真实坐标。
+env:
+  enabled: false            # true 才接; false 时行为与从前逐字节一致
+  city: "龙门"              # 显示名 — 它口中的"我这儿"
+  lat: 31.2304              # 真实坐标 (默认上海; 改成你自己的城市更像"就在附近")
+  lon: 121.4737
+  tz: "Asia/Shanghai"
+
+scheduler:
+  tick_every_sec: 60
+  active_quota_per_day: 2    # 主动开场配额 (§8.3)
+  sleep_start: "23:30"
+  sleep_end: "07:30"
+  degrade_days_no_reply: 3   # 3 天无回复 → 降频回归
+  busy_delay_min: 30         # busy 状态回复延迟窗口
+  busy_delay_max: 90
+  slack_steal_pct: 10        # 摸鱼偷回概率 %
+  no_input_max_per_day: 1    # 静默≥24h + free 槽低频 ≤1 次/日
+
+stickers:
+  search_driver: "firecrawl"   # firecrawl (零注册起步) | tenor (拿到 key 即切) | builtin | none
+  tenor_api_key: ""
+  firecrawl_base: "https://api.firecrawl.dev"
+  vision_enabled: true         # DeepSeek vision 打分 (未配 key 自动降级 0.5 标注)
+  lang: "ja"                   # 表情包搜索语言/目录
+  dir: "data/convo/stickers"
+  score_min: 0.6               # vision 入选阈值
+  cap_per_sticker: 0.30        # 单张发送概率封顶 (§8.7 防同质)

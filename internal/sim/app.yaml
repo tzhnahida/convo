@@ -1,0 +1,30 @@
+active_lang: ja
+interface_lang: ""
+mock_mode: false
+server:
+    host: ""
+daily_target: 20
+daily_time_target: 0
+min_accuracy: 0.8
+passive_enabled: false
+passive_min_interval: 0
+passive_max_interval: 0
+escape_password: ""
+escape_password_limit: 0
+escape_click_limit: 0
+auto_start: false
+auto_expand_words: true
+expand_batch_size: 10
+theme: ""
+assignment:
+    cadence_days: 0
+    cadence_count: 0
+    max_per_session: 0
+    ai_recommend: false
+session_time_budget: 0
+max_slow_type_ratio: 0
+sm2_max_interval_days: 180
+ai:
+    base_url: http://127.0.0.1:61443
+    api_key: sim-key
+    model: sim

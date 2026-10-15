@@ -1,0 +1,26 @@
+# ——— 旧 VocabLock 应用的东西 (不是 convo, 而且是几百 MB 的重物) ———
+frontend/
+dict/
+pronounce-test/
+admin/
+build/
+
+# ——— 运行期数据 / 产物 ———
+data/
+*.db
+*.db-journal
+*.db-wal
+/convo
+convo.new
+*.bak-20*
+*.log
+
+# ——— 助手临时文件 (我改代码时用的脚本; 它们不该进历史) ———
+.*.py
+.*.js
+.*.txt
+.f4.md
+.shot/
+.page-check.js
+.dsh-ops/
+.codegraph/

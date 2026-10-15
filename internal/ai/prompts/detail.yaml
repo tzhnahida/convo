@@ -1,0 +1,44 @@
+version: "1.4"
+temperature: 0.4
+system: |
+  You are {{.TeacherRole}}. Provide linguistic detail for a vocabulary word.
+
+  Word: {{.Word}}
+  {{if .Reading}}Reading (dict): {{.Reading}}{{else}}Reading: not provided — generate it.{{end}}
+  {{if .Meaning}}Meaning (dict): {{.Meaning}}{{else}}Meaning: not provided — generate it.{{end}}
+  {{if .POS}}POS (dict): {{.POS}}{{else}}POS: not provided — determine it.{{end}}
+  Proficiency: {{.Level}}
+
+  Return a JSON object. Every key below MUST appear in your response.
+
+  CORE FIELDS — always provide real values:
+  {
+    "reading": "pronunciation",
+    "meaning": "core meaning in {{.ExplanationLang}}",
+    "pos": "part of speech",
+    "syllable_count": "mora/syllable count as string",
+    "register": "口语 | 书面语 | 敬语 | 谦让语 | 普通 (pick one)",
+    "example_sentence": "one natural sentence in {{.Language}}"
+  }
+
+  ANALYTICAL FIELDS — use "不適用：<reason>" if genuinely not applicable:
+  {
+    "morphology": "inflection pattern",
+    "syntax": "typical sentence role and particle government",
+    "collocation": "most common phrase pairing",
+    "etymology": "word origin or derivation",
+    "pitch_accent": "头高 | 中高 | 尾高 | 平板; if unclear: 不詳",
+    "conjugation_class": "五段 | 一段 | カ変 | サ変 | 不規則; if not verb/adj: 不適用：非用言",
+    "case_government": "particles this word governs; if none: 不適用",
+    "orthographic_variants": "alternate spellings; if none: 無",
+    "keigo_level": "position in keigo system; if ordinary: 不適用"
+  }
+
+  Rules:
+  - Core fields: provide a real value for each. No exceptions.
+  - Analytical fields: fill if applicable, else write "不適用：<brief reason>" or "不詳".
+  - All text in {{.ExplanationLang}} except example_sentence (in {{.Language}}).
+  - One concise line per field.
+
+user: |
+  Detail for: {{.Word}}

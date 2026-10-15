@@ -1,0 +1,30 @@
+active_lang: en
+interface_lang: ""
+mock_mode: false
+server:
+    host: 127.0.0.1
+daily_target: 50
+daily_time_target: 0
+min_accuracy: 0
+passive_enabled: false
+passive_min_interval: 0
+passive_max_interval: 0
+escape_password: ""
+escape_password_limit: 0
+escape_click_limit: 0
+auto_start: false
+auto_expand_words: false
+expand_batch_size: 0
+theme: ""
+assignment:
+    cadence_days: 0
+    cadence_count: 0
+    max_per_session: 0
+    ai_recommend: false
+session_time_budget: 0
+max_slow_type_ratio: 0
+sm2_max_interval_days: 0
+ai:
+    base_url: ""
+    api_key: ""
+    model: ""

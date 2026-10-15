@@ -1,0 +1,46 @@
+dict:
+  providers:
+    cedict:
+      lang: zh
+      binary: 'python'
+      args:
+        - 'dict/zh_lookup.py'
+        - '--word'
+        - '{word}'
+      format: json
+      health_check:
+        custom:
+          - '--word'
+          - '测试'
+    jmdict:
+      lang: ja
+      binary: 'python'
+      args:
+        - 'dict/ja_lookup.py'
+        - '--word'
+        - '{word}'
+      format: json
+      health_check:
+        custom:
+          - '--word'
+          - 'テスト'
+    webster:
+      lang: en
+      binary: 'python'
+      args:
+        - 'dict/en_lookup.py'
+        - '--word'
+        - '{word}'
+      format: json
+      health_check:
+        skip: true
+    kengdic:
+      lang: ko
+      binary: 'python'
+      args:
+        - 'dict/ko_lookup.py'
+        - '--word'
+        - '{word}'
+      format: json
+      health_check:
+        skip: true

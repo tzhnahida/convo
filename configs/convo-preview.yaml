@@ -1,0 +1,13 @@
+listen: "127.0.0.1:8423"
+data_dir: "data"
+db_file: "convo-trial.db"
+ai:
+  base_url: https://api.deepseek.com
+  api_key: ""
+  model: deepseek-chat
+  vision_model: deepseek-v4-flash-vision-exp
+channel:
+  driver: "noop"
+stickers:
+  search_driver: "builtin"
+  vision_enabled: false
