@@ -88,4 +88,13 @@ func (e *Engine) NoteSceneBond(sceneKey, text string, at time.Time) {
 	if err := SaveBond(e.Store.DB, e.ownerKey(), sceneKey, b); err != nil {
 		log.Warn("convo:value", "关系量落库失败(亲密度会涨不动, 而它挡着主动配额): %v", err)
 	}
+	// §5.6 **关系阶段落到场景行** —— 见 `scenestage.go`。
+	//
+	// ⚠️ 它就是"消费者接上了、生产者不存在"那一类的**补生产者**:
+	// `SelfRoleLine`(群里"能不能怼")与 `conflictwire` 的 A1("陌生 → 不掺和")
+	// 都在读 `convo_scene.stage`, 而在它之前**没有任何东西升级过那个字段** ——
+	// 于是无论私聊多熟, 它在群里**永远按"陌生"那一档说话**。
+	//
+	// ⚠️ 用**刚读到的** `br`(不是重读一遍): 见 `NoteSceneStage` 的注释。
+	e.NoteSceneStage(sceneKey, br)
 }
