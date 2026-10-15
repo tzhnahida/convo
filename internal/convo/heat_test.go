@@ -586,25 +586,9 @@ func TestHeat_StoreRoundTripAndIdempotentSchema(t *testing.T) {
 	if v := HeatAt(st, base.Add(72*time.Hour), 36); math.Abs(v-10.5) > 0.01 {
 		t.Fatalf("2 个半衰期后现值 = %.3f, 期望 10.5 (42/4)", v)
 	}
-	// 惰性结算: 把现值写回事实
-	res, err := s.SettleHeat("group:9", base.Add(72*time.Hour), HeatStageFamiliar, HeatConfig{}.Normalized())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if math.Abs(res.Before-10.5) > 0.01 || math.Abs(res.After-10.5) > 0.01 {
-		t.Fatalf("结算读数 = before %.3f / after %.3f, 期望都是 10.5", res.Before, res.After)
-	}
-	st2, _, err := s.LoadHeat("group:9")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if math.Abs(st2.Value-10.5) > 0.01 {
-		t.Fatalf("结算后存量 = %.3f, 期望 10.5", st2.Value)
-	}
-	// 结算不许动会话计数器 (它不是互动)
-	if st2.SessionSeq != 7 || st2.LastMsgTS != ts {
-		t.Fatalf("结算动了会话计数器: %+v", st2)
-	}
+	// ⚠️ 这里原来还有一段「惰性结算」(调 `SettleHeat` 把现值写回事实) —— 已删。
+	//
+	// 上面那条「**读出来的不是现值**: 现值要现算」已经覆盖了它的实质;
 }
 
 func TestHeat_LogRecordsActualDelta(t *testing.T) {

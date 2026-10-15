@@ -184,7 +184,6 @@ var knownUnwired = map[string]bool{
 	"SetMemberAddress":         true,
 	"SetMemberStage":           true,
 	"SetMemberTaboo":           true,
-	"SettleHeat":               true,
 	"MoodLog":                  true,
 	"SlangByPhrase":            true,
 	"SparkHasInterface":        true,

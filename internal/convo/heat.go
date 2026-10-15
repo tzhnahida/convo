@@ -64,10 +64,12 @@ const (
 
 // 审计流水的原因词 (§3 的 reason 枚举)。
 const (
-	HeatReasonGain     = "gain_interaction" // 场景内一次互动 → 加温
-	HeatReasonCost     = "cost_initiate"    // 一次主动发起 → 扣 cost
-	HeatReasonDecay    = "decay_settle"     // 只把衰减落一次 (无 delta)
-	HeatReasonCapClamp = "cap_clamp"        // 本次加温被上限截断
+	HeatReasonGain = "gain_interaction" // 场景内一次互动 → 加温
+	HeatReasonCost = "cost_initiate"    // 一次主动发起 → 扣 cost
+	// ⚠️ **现在没有任何生产者** —— `SettleHeat` 已删(见它的位置那条注释)。
+	// 保留它是因为**历史流水里有这个值**, 删了那些行就读不懂了。
+	HeatReasonDecay    = "decay_settle" // 只把衰减落一次 (无 delta)
+	HeatReasonCapClamp = "cap_clamp"    // 本次加温被上限截断
 )
 
 // heatLadderSteps 档位表的长度: 第 1..9 条各自的形状, 第 10 条及以后 = gain_floor。
@@ -586,12 +588,20 @@ func (s *Store) settleHeat(sceneKey string, now time.Time, cap float64, cfg Heat
 	return res, nil
 }
 
-// SettleHeat 只把衰减落一次 (delta = 0)。给"时间到了顺手结算"和观测用。
-func (s *Store) SettleHeat(sceneKey string, now time.Time, stage string, cfg HeatConfig) (HeatSettle, error) {
-	n := cfg.Normalized()
-	return s.settleHeat(sceneKey, now, n.CapOf(stage), n, "", "", false,
-		func(HeatState) (float64, int, bool, string) { return 0, 0, false, HeatReasonDecay })
-}
+// ⚠️ 这里原来有一个 `SettleHeat`(只把衰减落一次, delta = 0) —— **已删**。
+//
+// 删它之前先证明了它**没有独占的信息**(两条等价性用例):
+//
+//	· 写侧: `settleHeat` 每次互动都 `st.Value = HeatAt(...) + delta` **写回** ——
+//		衰减**已经随每次互动落库**;
+//	· 读侧: `HeatAt` 从 `SettledTS` **现算**衰减 —— 不落库也对。
+//
+// 所以"落一次衰减"的值 == 读路径现算的值(实测逐位相等), 而 delta 恒为 0。
+// 它独有的产物只有一个 `reason=decay_settle` 的流水行, 而那张表本来就没有读者。
+//
+// ⚠️ 生产上也**没有"到点顺手结算"这个时刻** —— 没有任何定时任务会调它。
+// ⚠️ 而 `HeatReasonDecay` 那个常量**保留**: 它是**历史流水的标签**,
+// 删掉会让已经写进库的那些行读不懂。
 
 // RecordHeatInteraction 入账一次互动并返回本次读数 —— 接线方对**任何**场景消息调它。
 //
