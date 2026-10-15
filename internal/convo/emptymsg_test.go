@@ -141,10 +141,13 @@ func TestRecentDialog_GroupKeepsSpeakersApart(t *testing.T) {
 
 // ⚠️ **既没文本也没图** = 真的什么都没发生 (撤回 / 桥接方没给内容)。
 // ⚠️ 但这与"空文本**有图**"是两回事 —— 后者绝不能在这里挡掉。
-func TestOnUserMessage_TrulyEmptyIsIgnored(t *testing.T) {
+// ⚠️ 它原来调的是 `OnUserMessage`(兼容入口, 已删) —— 而它钉的是**一条性质**:
+// 「既没文本也没图 = 真的什么都没发生」, 且这与"空文本**有图**"是两回事。
+// 所以按"删重复实现时先问它的测试钉什么"那条规矩, **改钉在生产入口上**。
+func TestOnUserMessageRefs_TrulyEmptyIsIgnored(t *testing.T) {
 	e, _ := groupSpeakEngine(t, &sitCaptureChatter{})
 	for _, bad := range []string{"", "   ", "\n"} {
-		if err := e.OnUserMessage(context.Background(), bad, nil); err != nil {
+		if err := e.OnUserMessageRefs(context.Background(), bad, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

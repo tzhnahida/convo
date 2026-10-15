@@ -100,19 +100,16 @@ type Engine struct {
 	worldWarned string
 }
 
-// OnUserMessage 统一入口: 用户消息 (文本 + 图片列表, 可同时)。
-// OnUserMessage 兼容入口 (只有路径, 没有 md5)。
+// ⚠️ 这里原来有一个 `OnUserMessage(ctx, text, images)`(兼容入口) —— **已删**。
 //
-// ⚠️ 没 md5 就判不了重 —— 那会当成照片 (保守: 宁可多看一次)。
-// 真实路径走 OnUserMessageRefs (桥接方给了 md5)。
-func (e *Engine) OnUserMessage(ctx context.Context, text string, images []string) error {
-	refs := make([]ImageRef, 0, len(images))
-	for _, p := range images {
-		refs = append(refs, ImageRef{Path: p})
-	}
-	return e.OnUserMessageRefs(ctx, text, refs)
-}
-
+// 它自己的注释就写着「**真实路径走 `OnUserMessageRefs`**(桥接方给了 md5)」,
+// 而它作为"兼容入口"的调用者是 **0**。
+//
+// ⚠️ 而它不只是一个转发壳子 —— 它**主动丢掉了 md5**:
+// 把 `[]string` 路径包成 `ImageRef{Path: p}`, 于是判重**做不到**
+// (它自己的注释也承认: 「没 md5 就判不了重 —— 那会当成照片」)。
+// 留着它等于留一条**静默降级**的路: 谁用它, 谁就得到一个不会判重的图片管道,
+// 而现象只是"同一张梗图被反复收进库"。
 func (e *Engine) OnUserMessageRefs(ctx context.Context, text string, refs []ImageRef) error {
 	// ⚠️ **既没文本也没图 = 真的什么都没发生** (撤回 / 桥接方没给内容)。
 	//
@@ -189,79 +186,34 @@ func (e *Engine) prepareImage(ctx context.Context, file string) (string, error) 
 	return owned, nil
 }
 
-// describeImage 视觉模型: 描述图片 + 小夜口吻的一句第一反应。
-// 通道 D: 若是表情包/梗图, 输出尾部带 【梗图】<≤15 字含义> 行。
-func (e *Engine) describeImage(ctx context.Context, path string) (string, error) {
-	if e.VisionClient == nil || e.VisionModel == "" {
-		return "", fmt.Errorf("vision not configured")
-	}
-	system := "你是" + e.Lang + "语境里的说话人。看图后: 用一两句口语描述图里发生了什么/有什么细节, 再补一句像真人收到朋友照片时的第一反应 (可以吐槽/夸/好奇)。总共不超过 3 句, 口语化, 不要书面语。另外: 如果这张图是表情包/梗图/沙雕图 (不是普通照片), 在最后单独输出一行: 【梗图】<≤15 字>它表达的意思。"
-	// ⚠️ 动图抽多帧分开传 —— 与 LabelImage 同一条 (GIF 只认第一帧)。
-	paths, animated := visionReadyPaths(path)
-	q := "朋友发来这张图, 你看到了什么? 自然地说。"
-	if animated {
-		q += animatedNote
-	}
-	out, err := visionChat(ctx, e.VisionClient, e.VisionModel, system, q, paths)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
-}
-
-// splitMemeNote 把看图描述拆成 (**能进用户消息行的口语部分**, **只给系统看的标注**)。
+// ⚠️ 这里原来有**一整条旧图片管道** —— **已删**:
 //
-// A5 的病灶不是"标注不该存在", 而是"标注和口语走同一条路" —— 于是 `【梗图】<含义>`
-// 变成了用户说的话。拆开之后: 口语进上下文, 标注走 side-channel (表情包库 + vision_note 行,
-// 两者都被 recentDialog 的 kind 过滤挡在上下文之外)。
+//	`describeImage` · `splitMemeNote` · `extractMemeNote` · `captureUserSticker`
 //
-// ⚠️ 返回的 spoken **必须**先 TrimSpace: 否则照片描述后面会留一堆空行。
-func splitMemeNote(comment string) (spoken, note string) {
-	i := strings.Index(comment, "【梗图】")
-	if i < 0 {
-		return strings.TrimSpace(comment), ""
-	}
-	note = strings.TrimSpace(strings.TrimPrefix(comment[i:], "【梗图】"))
-	return strings.TrimSpace(comment[:i]), note
-}
+// 它们的取代者写在 `OnUserMessageRefs` 顶上那句注释里:
+// 「这里原本是一大段内联逻辑 (prepareImage → describeImage → 分流 → 落库),
+//   而它与群路径**长得像但不完全一样** —— 那种"两份实现"迟早分叉」。
+// 取代它的是 **`IngestImage`**(私聊与群**共用同一个**)。
+//
+// ⚠️ 而取代**不只是搬家**, 有两处是结构性的改进:
+//
+//	① **梗图含义从"散文里的标记"变成了"结构化字段"** ——
+//		旧路径让模型在描述末尾输出一行 `【梗图】<含义>`, 再由 `splitMemeNote`
+//		把它从散文里**解析**出来; 新路径直接读 `l.Meaning`。
+//		而旧代码自己的注释把这件事说得很清楚:
+//		「A5 的病灶不是"标注不该存在", 而是**标注和口语走同一条路**」。
+//		⇒ 新设计**从结构上**修好了它, 而不是靠一个解析函数把两者掰开。
+//
+//	② **收梗图搬去了 `AdoptSticker`**, 而且带上了 md5 (`ref.MD5`)。
+//
+// ⚠️ 所以删它们**不是砍功能**: `【梗图】` 这个标记在整个生产代码里
+// **只出现在这几个函数里**(实测), 没有任何别的东西依赖它。
 
-// extractMemeNote 从看图描述里抽【梗图】标注行 (没有=普通照片, 不收录)。
-func extractMemeNote(comment string) string {
-	if i := strings.Index(comment, "【梗图】"); i >= 0 {
-		note := strings.TrimSpace(strings.TrimPrefix(comment[i:], "【梗图】"))
-		note = strings.Trim(note, "】")
-		note = strings.TrimSpace(note)
-		if runes := []rune(note); len(runes) > 15 {
-			note = string(runes[:15]) + "…"
-		}
-		return note
-	}
-	return ""
-}
-
-// captureUserSticker 用户发的梗图 → 复制进表情包库 (affinity 0.55 起, 带 note)。
-func (e *Engine) captureUserSticker(ctx context.Context, imgPath, note string) (string, error) {
-	dir := filepath.Join(e.Cfg.Stickers.Dir, e.Cfg.Stickers.Lang)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
-	}
-	ext := strings.ToLower(filepath.Ext(imgPath))
-	if ext == "" {
-		ext = ".gif"
-	}
-	dst := filepath.Join(dir, fmt.Sprintf("user_%d%s", clock.Now().UnixNano(), ext))
-	if err := copyFile(imgPath, dst); err != nil {
-		return "", err
-	}
-	id, err := e.Store.InsertSticker("user-sent://"+note, dst, e.Cfg.Stickers.Lang, "user", 0.55)
-	if err != nil {
-		return "", err
-	}
-	if note != "" {
-		_ = e.Store.SetStickerNote(id, note)
-	}
-	return dst, nil
-}
+// ——— 以下是被取代的那条旧管道 (留档, 不再调用) ———
+//
+// ⚠️ 旧管道的四个函数已删 (见上面那段说明)。
+//
+// 原实现在 git 历史里 (提交 cf356e9 之前)。
 
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)

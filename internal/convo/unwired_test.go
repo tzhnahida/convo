@@ -161,7 +161,6 @@ var knownUnwired = map[string]bool{
 	"LongMemoryDecay":          true,
 	"NightDisablesNightSocial": true,
 	"NightTierStatsSnapshot":   true,
-	"OnUserMessage":            true,
 	"PromptDiff":               true,
 	"PromptStructureProblem":   true,
 	"RecentHeatLog":            true,
@@ -193,13 +192,9 @@ var knownUnwired = map[string]bool{
 	"TouchAndTopMemories":      true,
 	"Unwrap":                   true,
 	"WithDay":                  true,
-	"captureUserSticker":       true,
-	"describeImage":            true,
-	"extractMemeNote":          true,
 	"fmtStrain":                true,
 	"hasAnySubstr":             true,
 	"learnSystemPrompt":        true,
-	"splitMemeNote":            true,
 	"topicKeyDay":              true,
 }
 

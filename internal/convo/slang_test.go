@@ -162,20 +162,15 @@ func TestApplySessionDelta_memes(t *testing.T) {
 	}
 }
 
-func TestExtractMemeNote(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"这张图是个猫, 好可爱\n【梗图】打工人的命也是命", "打工人的命也是命"},
-		{"就是普通照片", ""},
-		{"【梗图】意思太长了超了十五个字的标记啊哈哈哈哈", "意思太长了超了十五个字的标记啊…"},
-	}
-	for _, c := range cases {
-		if got := extractMemeNote(c.in); got != c.want {
-			t.Fatalf("extractMemeNote(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
+// ⚠️ 这里原来有一个 `TestExtractMemeNote`, 而 `extractMemeNote` **已删**。
+//
+// 它钉的是「从散文里解析 `【梗图】<含义>`」这件事 —— 而那个**做法本身**被换掉了:
+// 新路径直接读 `l.Meaning` 这个**结构化字段**。
+//
+// ⚠️ 所以这不是"丢了覆盖", 而是**病灶被从结构上修好了**:
+// 旧做法要靠一个解析函数把标注从口语里掰出来, 而新做法里
+// 「标注混进用户消息行」**在结构上不可能发生**。
+// 想钉那条性质, 该钉的是打标那一侧(`l.Meaning` 的来源), 不是解析这一侧。
 
 // ——— 注入: 段 7 黑话表 + 段 3.6 接住 ———
 
