@@ -357,6 +357,19 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 	// ⚠️ 排在关系量之前不是随意的: 它是"这一轮说了什么"的处置,
 	// 而关系量是"这一轮的互动质量"。两者互不依赖, 但顺序固定了好读。
 	e.noteSparkPickup(text, now)
+	// §6.7 **私聊的热力入账** —— 而这一条是**仿真器抓出来的** (2026-10-16)。
+	//
+	// ⚠️ `NoteSceneHeat` 原来**只挂在群裁决上**(`value.go`), 私聊一次都没有 ⇒
+	// 私聊场景**没有热力行** ⇒ `heatNow` 返 `(0, true)` ⇒ `HeatQuota(0) = 0` ⇒
+	// **主动配额恒为 0** ⇒ 它在私聊里**永远不会主动开口**。
+	//
+	// ⚠️ 而更难看的是**收支不对称**: `SpendSceneHeat(DefaultSceneKey, …)`
+	// 一直在**私聊上扣钱**(主动开场那两处), 只是从来没有进项。
+	//
+	// ⚠️ 这个病 `heatwire.go` 的头部**逐字写过**, 而它只修了群 ——
+	// 单测测的是"`NoteSceneHeat` 的行为对不对", 没人问"**私聊路径有没有调它**"。
+	// 而仿真器 10 天的汇总只有一句: 「**她主动 0**」。
+	e.NoteSceneHeat(DefaultSceneKey, e.ownerKey(), now)
 	e.NoteSceneBond(DefaultSceneKey, text, now)
 	e.noteChallenge(text, e.lastAIText(3))
 	dayMoodNote := ""
