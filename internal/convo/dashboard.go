@@ -20,6 +20,12 @@ import (
 
 // handleDashboard 看板页。
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	// ⚠️ **两行缓存指令都不能省** (2026-10-17):
+	// 页面 URL 每次一样 (?token=...), 而它每次加载都会重新取 25 路读数 ——
+	// 没有 no-store, 浏览器会端出一份缓存副本, 现象就是
+	// owner 那句「控制页还是之前的那个吗」: 线上改了, 他看到的还是旧的。
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = io.WriteString(w, dashboardHTML)
 }

@@ -232,6 +232,12 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
+	// ⚠️ **不许缓存**: 观测面的每一个读数都是"现在"的值, 而 URL 每次都一样 ——
+	// 没有这一行, 浏览器会自己猜着缓存, 于是 owner 看到的是几分钟前(甚至更早)的画面。
+	// 2026-10-17: owner 问「控制页还是之前的那个吗」—— 线上明明是新的,
+	// 他看到的是缓存的旧页 + 旧读数。
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
