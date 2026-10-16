@@ -174,6 +174,11 @@ select option{background:#1e1b4b;color:#fff}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.bad{background-image:linear-gradient(90deg,#e11d48,#f97316);box-shadow:0 20px 50px -18px rgba(249,115,22,1)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+/* 软刷新 (自动刷新 / 点刷新): **一处动画都不放**。
+   切页放动画是对的 —— 那是"新内容"的提示; 而刷新放动画等于整页重放一遍,
+   看起来就是 owner 说的"闪一下", 而且每 30 秒闪一次。
+   ⚠️ 只关动画, **不关终态**: 图表照样是画完的样子 (与 reduced-motion 同一条纪律)。 */
+.noanim *,.noanim *::before,.noanim *::after{animation:none!important}
 @media (max-width:700px){.grid{grid-template-columns:1fr}main,.top{padding-left:13px;padding-right:13px}.brand p{display:none}}
 /* ——— 图表 · 卡片动效 · 骨架屏 (2026-10-16) ———
    ⚠️ 全部手写: 零外部请求是硬约束 —— 观测手段不该有断网风险。
@@ -1182,6 +1187,9 @@ window.addEventListener("hashchange",function(){
   var h=(location.hash||"").replace("#","");
   if(h&&h!==TAB&&tabExists(h))go(h,true);
 });
+// SOFT: 这一轮绘制是不是"刷新"(而不是切页) —— 见 paint 与 .noanim。
+var SOFT=false;
+
 function paint(){
   var h="";
   if(TAB==="overview")h=pOverview();
@@ -1194,14 +1202,20 @@ function paint(){
   else if(TAB==="sticker")h=pSticker();
   else if(TAB==="slang")h=pSlang();
   else if(TAB==="state")h=pState();
-  el("view").innerHTML=h;
-  rollNumbers(el("view"));
+  // 刷新与切页共用这一个绘制函数, 但观感必须不同 (见 .noanim 的注释)。
+  // 顺手把滚动位置还回去 —— 30 秒一次的自动刷新不该把你正在看的地方甩掉。
+  var v=el("view"), sc=window.scrollY;
+  v.className=SOFT?"noanim":"";
+  v.innerHTML=h;
+  rollNumbers(v);
+  if(SOFT){window.scrollTo(0,sc);SOFT=false;}
 }
 function tick(){
   if(!el("auto").checked)return;
   if(document.hidden)return;
   var a=document.activeElement;
   if(a&&(a.tagName==="INPUT"||a.tagName==="SELECT"||a.tagName==="TEXTAREA"))return;
+  SOFT=true;
   loadAll();
 }
 // schedRevCard §4.5.4-2 —— 日程被**程序**改过什么、为什么。
@@ -1269,7 +1283,7 @@ function schedRegen(){
   }).catch(function(e){toast("失败: "+e.message,1);});
 }
 
-el("refresh").addEventListener("click",function(){loadAll();});
+el("refresh").addEventListener("click",function(){SOFT=true;loadAll();});
 (function(){var h=(location.hash||"").replace("#","");if(h&&tabExists(h))TAB=h;})();
 paintTabs();
 loadAll().then(function(){setTimeout(tick,0);});

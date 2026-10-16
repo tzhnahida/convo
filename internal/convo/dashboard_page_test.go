@@ -66,6 +66,10 @@ func TestConsolePage_ZeroExternalDependency(t *testing.T) {
 		"border-radius:var(--r2)", // 大圆角
 		"prefers-reduced-motion",  // 动效降级
 		"box-shadow:0 30px 70px",  // 彩色光晕
+		// 刷新与切页的观感必须分开: 切页放入场动画, 刷新一处都不放 ——
+		// 否则每 30 秒整页重放一遍动画, 就是 owner 说的「闪一下」。
+		".noanim *",
+		"SOFT=true",
 	} {
 		if !strings.Contains(dashboardHTML, want) {
 			t.Errorf("Modern Gradient 的 %q 不见了 —— 风格漂移", want)
