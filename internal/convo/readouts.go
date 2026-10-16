@@ -275,6 +275,24 @@ func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
 //
 // ⚠️ 人物层存在的理由是"群与私聊是同一个人": 只有场景层时,
 // 群里聊 900 条而私聊没聊过, 私聊那边会恒为**陌生** —— 于是永远不开口。
+// handleSelfActions 对外动作的**审计读入** —— 它自己做过什么, 连同理由。
+//
+// ⚠️ 这个端点存在的理由与控制权那一侧对偶: 控制权交给它之后,
+// 唯一能让 owner 放心的东西就是「每一次决定都能回看」。
+// 所以连它**拒绝**的那些也要出现在这里 —— 拒绝也是一次决定。
+func (s *Server) handleSelfActions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, map[string]interface{}{"error": "method"})
+		return
+	}
+	rows, err := s.Store.LoadSelfActions(intParam(r.URL.Query().Get("limit"), 50))
+	if err != nil {
+		writeJSON(w, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"actions": SelfActionsJSON(rows)})
+}
+
 func (s *Server) handleBonds(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, map[string]interface{}{"error": "method"})

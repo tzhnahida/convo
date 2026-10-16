@@ -42,6 +42,9 @@ func main() {
 	// 一次性运维: 收拢表情包池里的重复。dry|run, 默认关。
 	// ⚠️ run 是**破坏性**的 (删行 + 删重复文件) —— 所以必须显式点名, 不许顺手跑。
 	dedupeStickers := flag.String("dedupe-stickers", "", "one-shot: collapse duplicate stickers by content + prune download leftovers (dry|run; default off)")
+	// 说说的回滚入口。msg id 在 convo_selfaction.result 里 (「说说已发 (msg …)」)。
+	// ⚠️ 这是**人**的刹车, 不是它的: 对外发出去的东西要有办法收回。
+	delQzone := flag.String("delete-qzone", "", "one-shot: delete one Qzone post by message id (default off)")
 	flag.Parse()
 
 	cfg, err := convo.Load(*cfgPath)
@@ -59,6 +62,15 @@ func main() {
 
 	// 表情包池一次性收拢 (2026-10-16 owner 报「表情包都是一模一样的」)。
 	// 起因: 爬虫每轮重下同一批 URL + InsertSticker 裸 INSERT → 473 行其实只有 21 张图。
+	if *delQzone != "" {
+		client := convo.NewOneBotClient(cfg.Channel.APIBase, cfg.Channel.AccessToken)
+		if err := client.DeleteQzone(*delQzone); err != nil {
+			log.Error("convo:self", "删说说失败: %v", err)
+			os.Exit(1)
+		}
+		log.Info("convo:self", "说说 %s 已删", *delQzone)
+		return
+	}
 	if *dedupeStickers != "" {
 		dry := *dedupeStickers != "run"
 		rep, err := store.DedupeStickers(dry)

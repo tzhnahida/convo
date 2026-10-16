@@ -277,6 +277,14 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		}
 		return nil
 	}
+	// 对外自我表达的批准词 (「准」/「不要」)。
+	//
+	// ⚠️ 也在这里短路: 那句「准」是对**一条待办**的回答, 不是聊天内容 ——
+	// 让它走正常对话的话, 模型会把「准」当成莫名的单字, 而待办还在那儿挂着。
+	// 识别本身是**保守**的 (见 SelfActionApproval): 只有很短且明确的词才算。
+	if e.trySelfActionReply(ctx, text) {
+		return nil
+	}
 	// §7.4 **遗忘权**: 用户在对话里说"别记我"。
 	//
 	// ⚠️ **放在这里而不是某条分支里**: 遗忘权优先于一切社交判断 ——
@@ -1078,6 +1086,15 @@ func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
 	}
 	now := clock.Now()
 	day := clock.Today()
+
+	// 对外自我表达 (群名片 / 头像 / 说说)。
+	//
+	// ⚠️ 放在 switch **之前**、且不看 action.Kind: 那边的裁决回答的是
+	// 「要不要主动跟 owner 说话」, 这里回答的是「要不要对外动一下」。
+	// 两件事的节律不同 —— 而且自我表达不该被「今天已经开口过了」这类计数挡住。
+	if err := e.selfExpressTick(ctx); err != nil {
+		log.Warn("convo:self", "tick: %v", err)
+	}
 
 	switch action.Kind {
 	case ActPreview:

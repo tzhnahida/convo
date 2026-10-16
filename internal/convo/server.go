@@ -141,6 +141,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/convo/series", s.handleSeries)
 	mux.HandleFunc("/api/v1/convo/bonds", s.handleBonds)
 	mux.HandleFunc("/api/v1/convo/state", s.handleState)
+	mux.HandleFunc("/api/v1/convo/self-actions", s.handleSelfActions)
 	// 看板 (零构建, Go 直接吐) + 决策轨迹
 	mux.HandleFunc("/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/v1/convo/traces", s.handleTraces)

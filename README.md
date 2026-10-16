@@ -576,8 +576,93 @@ internal/log        日志
 - 它可以说"今天我也没力气了" —— 活人也会;
 - 但**不许**用情绪讨安慰(原则 7):身体不适只影响行为。
 
----
+### 13.4 对外自我表达（群名片 / 头像 / 昵称 / 说说）
 
+聊天是「跟某个人说话」；这一组动作不一样 —— 它们是在**别人看得见的地方留下痕迹**。
+所以它单列一节，而不是塞进「说话决策」。
+
+| 动作 | 默认档位 | 限频 | 风险 |
+|---|---|---|---|
+| 群名片 | `auto` | 20 小时一次，且**文案没变就不动** | 最低 —— 只在这一个群 |
+| 头像 | `auto` | 30 天 | 中 —— 账号级 |
+| 说说 | `auto` | 7 天，每天动作总数上限 2 | 高 —— **对外公开发言** |
+| 账号昵称 | `propose` | —— | 高 —— **全局**，所有好友和群都看得见 |
+
+**控制权在它自己手上**（owner 定规 2026-10-16：「ai 说行头像就能换」）。所以放行要过三道：
+
+1. **图源层的 R18 关** —— pixiv 走 `mode=safe`、结果里 `xRestrict != 0` 一律丢、标签/标题命中 R18 词表一律丢；
+2. **视觉闸**（`ScreenCandidate`）—— 每张图**必须**过一次 AI 视觉，判据三条缺一不可：视觉可用、非 NSFW、分数 ≥ 阈值；
+3. **它自己的 YES/NO 判断**（`askSelfJudgment`）—— 把图的出处、标签、它看过的图意、当前状态一起给它，问「要不要」。
+
+⚠️ 视觉闸是 **fail-closed**：没配视觉 / 调用失败 / 结论含糊 → **这张图不许用**。
+一条「视觉挂了就放行」的闸等于没有闸 —— 它会在最需要它的那天失效。
+
+每一次判断都落库（`convo_selfaction`），**包括它拒绝的那些** —— 拒绝也是一次决定。
+「控制权给它」不等于放任：限频、每日上限、全程留痕，缺一个，出事时连「它当时怎么想的」都查不到。
+
+#### 图从哪来：可插拔
+
+`ImageSource` 只有两个方法（`Name` / `Fetch`）。**换站点 = 改配置，不碰代码**：
+
+```yaml
+self_express:
+  enabled: false          # ⚠️ 默认关：代码上船，线上一个动作都不发生
+  avatar: auto            # auto（它自己判）| propose（先发图给你，等一个字）| off
+  nickname: propose       # 昵称是全局的，默认仍要你点一下
+  qzone: auto
+  card: auto
+  card_text: ""           # 空 = 用 group.self_aliases 的第一个（通常是「小夜」）
+  avatar_min_days: 30
+  qzone_min_days: 7
+  card_min_hours: 20
+  daily_cap: 2            # 所有对外动作合计，每天最多几次
+  images:
+    source: pixiv         # none | pixiv | json | html
+    dir: data/convo/self
+    proxy: ""             # 例如 http://127.0.0.1:2026 —— pixiv 在国内必须走它
+    role_query: ""        # 角色名（与 keyword 一起搜，结果合并）
+    keyword: ""           # 关键词
+    per_run: 6            # 每轮最多几张（每张都要过视觉闸，所以这也是花销上限）
+    r18: false            # 关着：搜 safe 模式 + xRestrict 非 0 丢 + 词表丢
+    r18_words: ["R-18", "R18", "R-18G", "18禁", "成人向", "エロ", "成人漫画"]
+    vision_required: true # ⚠️ 关了它等于放弃那道闸，启动时会大声警告一行
+    vision_min: 0.6
+    pixiv:
+      base: https://www.pixiv.net
+      cookie: ""          # 可选，被要求登录时填 PHPSESSID=...
+      order: date_d
+    json:                 # 任何站点的 JSON 接口
+      url: ""             # 支持 {query} / {n}
+      array_path: ""      # 点路径，例如 data.items
+      url_field: ""
+      page_field: ""
+      title_field: ""
+      author_field: ""
+      tags_field: ""
+      r18_field: ""
+      headers: {}
+    html:                 # 任何站点的页面（纯 stdlib 正则，零依赖）
+      url: ""
+      pattern: ""         # 必须含**一个捕获组** = 图片地址
+      r18_pattern: ""     # 命中的整段直接丢
+      base: ""            # 相对地址按它补全
+      headers: {}
+```
+
+想接自己的网站：优先用 `json` / `html` 两种配置（不写代码）；真要定制就实现 `ImageSource` 两个方法，
+在 `NewImageSource` 里加一个分支。代理只挂在**抓图**这一个 `http.Client` 上 —— 不碰 AI 调用与通道。
+
+#### 三条必须知道的
+
+1. **未在真号上实测。** 五个 OneBot action（`set_group_card` / `set_qq_profile` / `set_qq_avatar` /
+   `send_qzone_msg` / `delete_qzone_msg`）的 payload 形状按 OneBot v11 与桥接端（`nimbus/hook`）的
+   action 表写 —— 而「实测」意味着真改、真发。第一次执行时**看日志**。
+2. **降级要看得见。** 视觉闸拦下的每一张都有计数日志；R18 源头拦了几张也打日志 ——
+   不然「R18 关掉了」只是嘴上说。
+3. **风控是真成本。** 2026-09-24 这个号被判定外挂设备下线过一次；账号级动作（头像、说说）
+   比发消息显眼得多，而且说说还要过 Qzone 那套独立风控。所以默认限频给得很保守，想放松再放松。
+
+---
 ## 14. 管理面与观测面
 
 ### 14.1 HTTP 端点(全部带 token)

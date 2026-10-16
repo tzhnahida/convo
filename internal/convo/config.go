@@ -34,6 +34,178 @@ type Config struct {
 	// EnvSource 此前只在仿真和测试里被赋值过, 生产一次都没有 ——
 	// 于是天气段不存在、世界事件 0 条、心情没有外部成因。
 	Env EnvConfig `yaml:"env"`
+	// 对外自我表达: 群名片 / 头像 / 昵称 / 说说。
+	//
+	// ⚠️ 默认 `enabled: false` —— 代码先上船, 线上一个动作都不发生。
+	// 开了之后: 头像/说说/群名片**由它自己判** (视觉闸 + 它自己的 YES/NO), 决策理由全部落库。
+	SelfExpress SelfExpressConfig `yaml:"self_express"`
+}
+
+// SelfExpressConfig 对外自我表达: 群名片 / 头像 / 昵称 / 说说。
+//
+// 三种模式 (每个动作各自可配):
+//
+//	auto    它自己判 —— 过视觉闸 + 它自己的 YES/NO 判断 → 直接做
+//	propose 先问 owner: 在私聊里说「我想换这个」, 回一个字才做
+//	off     这个动作完全不碰
+//
+// 默认 (owner 2026-10-16 定): 头像 / 说说 / 群名片 = auto (「控制权交给 ai」),
+// 昵称 = propose —— 昵称是**全局**的, 会出现在所有好友和所有群里。
+//
+// ⚠️ 群名片默认文案**固定**(不挂状态后缀) —— owner 明确选的 plain。
+type SelfExpressConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Avatar   string `yaml:"avatar"`
+	Nickname string `yaml:"nickname"`
+	Qzone    string `yaml:"qzone"`
+	Card     string `yaml:"card"`
+	// CardText 群名片固定文案。空 = 用 group.self_aliases 的第一个 (通常是「小夜」)。
+	CardText string `yaml:"card_text"`
+	// 限频。三条理由: 风控 (账号级动作比发消息显眼)、人味 (频繁换头像/天天发说说
+	// 是典型的机器行为)、以及"每天都做同一件事"会让它变成一台发布机。
+	AvatarMinDays int `yaml:"avatar_min_days"`
+	QzoneMinDays  int `yaml:"qzone_min_days"`
+	CardMinHours  int `yaml:"card_min_hours"`
+	// DailyCap 每天最多几次对外动作 (所有 kind 合计)。
+	DailyCap int `yaml:"daily_cap"`
+	// Images 图从哪来 —— 见 ImageSourceConfig。
+	Images ImageSourceConfig `yaml:"images"`
+}
+
+// Mode 归一化一个动作档位 (空 = 调用方给的默认)。
+func (c SelfExpressConfig) Mode(kind, def string) string {
+	var v string
+	switch kind {
+	case "avatar":
+		v = c.Avatar
+	case "nickname":
+		v = c.Nickname
+	case "qzone":
+		v = c.Qzone
+	case "card":
+		v = c.Card
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "auto", "propose", "off":
+		return strings.ToLower(strings.TrimSpace(v))
+	}
+	return def
+}
+
+// ImageSourceConfig 图片来源 —— **可插拔**: 换站点 = 改配置, 不碰代码。
+//
+// source 的四个取值:
+//
+//	none   不抓图 (默认)
+//	pixiv  官方 ajax 搜索 (安全模式: mode=safe + xRestrict==0 + R18 词表)
+//	json   任何站点的 JSON 接口 (URL 模板 + 点路径 + 字段名)
+//	html   任何站点的页面 (正则抓图; 纯 stdlib, 零第三方依赖)
+type ImageSourceConfig struct {
+	Source string `yaml:"source"`
+	// Dir 图存哪 (默认 <data_dir>/convo/self)。
+	Dir string `yaml:"dir"`
+	// Proxy 抓图走的代理, 例如 http://127.0.0.1:2026 (pixiv 在国内必须走它)。
+	// ⚠️ 只作用于**图片抓取**这一个 http.Client —— 不碰 AI 调用与通道。
+	Proxy     string `yaml:"proxy"`
+	UserAgent string `yaml:"user_agent"`
+	// PerRun 每轮最多抓几张 (每张都要过视觉闸, 所以这也是花销上限)。
+	PerRun int `yaml:"per_run"`
+	// RoleQuery / Keyword: owner 选了「角色名 + 关键词都要」→ 两个都搜, 结果合并去重。
+	RoleQuery string `yaml:"role_query"`
+	Keyword   string `yaml:"keyword"`
+	// R18 默认 false。关着的时候: pixiv 搜索走安全模式 + 结果里 xRestrict!=0 一律丢 +
+	// 标签/标题命中 R18Words 一律丢。开着 = 只在源头放宽搜索模式, **视觉闸仍然照拦**。
+	R18      bool     `yaml:"r18"`
+	R18Words []string `yaml:"r18_words"`
+	// VisionRequired 默认 true。**关了它等于放弃那道闸** —— 启动时会大声警告一行。
+	VisionRequired *bool            `yaml:"vision_required"`
+	VisionMin      float64          `yaml:"vision_min"`
+	Pixiv          PixivConfig      `yaml:"pixiv"`
+	JSON           JSONSourceConfig `yaml:"json"`
+	HTML           HTMLSourceConfig `yaml:"html"`
+}
+
+// PixivConfig pixiv 搜索与下载的细节。
+type PixivConfig struct {
+	// Base 站根 (默认 https://www.pixiv.net)。换成镜像/反代就改这里。
+	Base string `yaml:"base"`
+	// Cookie 可选。公开搜索多数情况不用登录; 被要求登录时填 `PHPSESSID=...`。
+	Cookie string `yaml:"cookie"`
+	// Order: date_d (最新) | date (旧→新) | popular_d (热度) | popular_male_d …
+	Order string `yaml:"order"`
+}
+
+// JSONSourceConfig 任何站点的 JSON 接口。
+//
+// URL 里的 {query} / {n} 会被替换; ArrayPath 是点路径 (例如 data.items);
+// 其余字段填该数组里元素的键名。
+type JSONSourceConfig struct {
+	URL         string            `yaml:"url"`
+	ArrayPath   string            `yaml:"array_path"`
+	URLField    string            `yaml:"url_field"`
+	PageField   string            `yaml:"page_field"`
+	TitleField  string            `yaml:"title_field"`
+	AuthorField string            `yaml:"author_field"`
+	TagsField   string            `yaml:"tags_field"`
+	R18Field    string            `yaml:"r18_field"`
+	Headers     map[string]string `yaml:"headers"`
+}
+
+// HTMLSourceConfig 任何站点的页面 (零依赖正则抓图)。
+type HTMLSourceConfig struct {
+	URL string `yaml:"url"`
+	// Pattern 必须含**一个捕获组** = 图片地址。相对地址会按 Base 补全。
+	Pattern string `yaml:"pattern"`
+	// R18Pattern 命中的整段直接丢弃 (可选)。
+	R18Pattern string            `yaml:"r18_pattern"`
+	Base       string            `yaml:"base"`
+	Headers    map[string]string `yaml:"headers"`
+}
+
+// Normalized 零值纪律: 整段缺省 = 走内置默认, 不是「全部归零」。
+func (c SelfExpressConfig) Normalized() SelfExpressConfig {
+	if c.AvatarMinDays <= 0 {
+		c.AvatarMinDays = 30
+	}
+	if c.QzoneMinDays <= 0 {
+		c.QzoneMinDays = 7
+	}
+	if c.CardMinHours <= 0 {
+		c.CardMinHours = 20
+	}
+	if c.DailyCap <= 0 {
+		c.DailyCap = 2
+	}
+	c.Images = c.Images.Normalized()
+	return c
+}
+
+// Normalized 图源默认值。
+func (c ImageSourceConfig) Normalized() ImageSourceConfig {
+	if c.PerRun <= 0 {
+		c.PerRun = 6
+	}
+	if c.VisionMin <= 0 {
+		c.VisionMin = 0.6
+	}
+	if c.UserAgent == "" {
+		c.UserAgent = "Mozilla/5.0 (compatible; convo/1.0)"
+	}
+	if len(c.R18Words) == 0 {
+		c.R18Words = []string{"R-18", "R18", "R-18G", "18禁", "成人向", "エロ", "成人漫画"}
+	}
+	if c.Pixiv.Base == "" {
+		c.Pixiv.Base = "https://www.pixiv.net"
+	}
+	if c.Pixiv.Order == "" {
+		c.Pixiv.Order = "date_d"
+	}
+	return c
+}
+
+// VisionRequiredOn 默认 true —— 只有显式写 false 才关得掉。
+func (c ImageSourceConfig) VisionRequiredOn() bool {
+	return c.VisionRequired == nil || *c.VisionRequired
 }
 
 type AIConfig struct {

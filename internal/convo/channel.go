@@ -461,3 +461,84 @@ func (c *OneBotClient) LoginInfo() (userID int64, nickname string, err error) {
 	c.selfName = d.Nickname
 	return d.UserID, d.Nickname, nil
 }
+
+// ——— 对外自我表达: 头像 / 昵称 / 群名片 / 说说 ———
+//
+// ⚠️ **为什么不往 Sender 上加**: 与 GroupSender 同一个理由 —— Sender 有十几个实现与
+// 测试替身 (LogSender / simSender / styleCapSender …), 加方法就要它们全补空实现,
+// 而它们没有一个会真的去改头像。能力做成**可选接口** (SelfExpressSender),
+// 谁支持谁实现, 不支持的在类型断言处就看得出来。
+//
+// ⚠️ 这五个动作**未在真号上实测** —— 实测就是真改/真发。payload 形状按 OneBot v11
+// 与桥接端 (nimbus/hook, 133 个 action) 的 action 表写; 第一次执行时看日志成败。
+
+// SetGroupCard 改**这个群里的**群名片。
+//
+// 群名片是"它在这个群自愿用的名字", 与账号昵称分开 —— 所以它比改昵称安全得多。
+func (c *OneBotClient) SetGroupCard(groupID int64, card string) error {
+	return c.call("set_group_card", map[string]interface{}{
+		"group_id": groupID,
+		"card":     card,
+	}, nil)
+}
+
+// SetProfile 改账号昵称与签名。
+//
+// ⚠️ 这是**全局**动作: 昵称出现在所有好友、所有群里。所以它默认仍是"提议"档。
+func (c *OneBotClient) SetProfile(nickname, personalNote string) error {
+	p := map[string]interface{}{}
+	if strings.TrimSpace(nickname) != "" {
+		p["nickname"] = strings.TrimSpace(nickname)
+	}
+	if strings.TrimSpace(personalNote) != "" {
+		p["personal_note"] = strings.TrimSpace(personalNote)
+	}
+	if len(p) == 0 {
+		return errors.New("set_qq_profile: 昵称与签名至少要给一个")
+	}
+	return c.call("set_qq_profile", p, nil)
+}
+
+// SetAvatar 换头像 (本地图片路径)。
+//
+// 绝对路径 —— 桥接方用自己的 cwd 解析相对路径 (同 SendGroupImage 的 AbsMediaPath)。
+func (c *OneBotClient) SetAvatar(localPath string) error {
+	return c.call("set_qq_avatar", map[string]interface{}{
+		"file": AbsMediaPath(localPath),
+	}, nil)
+}
+
+// PostQzone 发一条说说 (文字 + 最多几张图), 返回桥接端给的 msg id (可能为空)。
+//
+// ⚠️ 说说与聊天是**两种东西**: 聊天是跟某个人说话, 说说是在**别人看得见的地方挂一块牌子**。
+// 所以调用点必须写清"这条会被别人看见"。
+func (c *OneBotClient) PostQzone(text string, imagePaths []string) (string, error) {
+	segs := []OneBotSegment{}
+	if t := strings.TrimSpace(text); t != "" {
+		segs = append(segs, OneBotSegment{Type: "text", Data: map[string]string{"text": t}})
+	}
+	for _, p := range imagePaths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		segs = append(segs, OneBotSegment{Type: "image", Data: map[string]string{"file": AbsMediaPath(p)}})
+	}
+	if len(segs) == 0 {
+		return "", errors.New("send_qzone_msg: 文字与图片不能都为空")
+	}
+	var d struct {
+		MessageID json.Number `json:"message_id"`
+	}
+	if err := c.call("send_qzone_msg", map[string]interface{}{"message": segs}, &d); err != nil {
+		return "", err
+	}
+	return d.MessageID.String(), nil
+}
+
+// DeleteQzone 删掉一条说说 (回滚用)。
+func (c *OneBotClient) DeleteQzone(msgID string) error {
+	if strings.TrimSpace(msgID) == "" {
+		return errors.New("delete_qzone_msg: msg id 为空")
+	}
+	return c.call("delete_qzone_msg", map[string]interface{}{"message_id": msgID}, nil)
+}

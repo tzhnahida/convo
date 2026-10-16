@@ -383,6 +383,10 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	if err := EnsureBondPersonSchema(s.DB); err != nil {
 		return fmt.Errorf("bond person schema: %w", err)
 	}
+	// 对外自我表达 (群名片/头像/昵称/说说) —— 每一次判断与执行都留痕的那张表。
+	if err := EnsureSelfActionSchema(s.DB); err != nil {
+		return fmt.Errorf("self action schema: %w", err)
+	}
 	// 老库回填: **只能**从 private:<uin> 那一行来 ——
 	// 群那行是「这个群的总量」, 没有 uin 维度, 从它回填是编的。
 	// 幂等, 所以每次开库跑一遍没有副作用。

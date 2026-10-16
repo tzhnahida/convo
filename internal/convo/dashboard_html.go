@@ -289,6 +289,7 @@ var SPEC=[
   ["counters","/series?kind=counters&days=30"],
   ["heatlog","/heat?limit=120"],
   ["bonds","/bonds"],
+  ["selfactions","/self-actions"],
   ["state","/state"]
 ];
 var TABS=[["overview","概览"],["world","世界观"],["persona","人格"],["dialog","对话"],
