@@ -3,13 +3,28 @@
 /convo.exe
 /convo.exe~
 /convo-linux-arm64
+/convo-arm64
+convo.new
 *.exe
 *.exe~
+*.bak-20*
 
-# ——— 运行时生成的配置 (base_url 每次换随机端口) ———
-internal/sim/app.yaml
-internal/api/app.yaml
+# ——— 运行期数据 (默认 data_dir=data / db_file=convo-trial.db) ———
+data/
+*.db
+*.db-journal
+*.db-wal
+*.log
+
+# ——— 工具 / 助手临时文件 ———
+# (2026-10-16: .dsh-ops/ 曾随 internal/convo 一起被 commit 进本仓库 —— 里面还是旧根路径
+#  VocabLock-v2/backend/internal/convo 下的操作计划; 已移除, 以后在此忽略。)
+.dsh-ops/
+.codegraph/
+.shot/
+.page-check.js
 
 # ——— 我改代码时的临时脚本 ———
 *.py
 cmsg*.txt
+commitmsg*.txt
