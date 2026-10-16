@@ -73,6 +73,8 @@ type Engine struct {
 	// 那一天里「被 @ 必答」这类用例会**必红**。2026-10-17 00:06 就撞上了:
 	// 跨过午夜, 套件突然红了, 而代码一行没动, 查起来像见鬼。
 	DayMoodFn func(day string) DayMood
+	// PokeRollFn 戳一戳掷骰 (回不回、怎么回), nil = Dice。**测试注入用**。
+	PokeRollFn func(n int) int
 
 	Store   *Store
 	Cfg     Config

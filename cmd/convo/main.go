@@ -193,6 +193,29 @@ func main() {
 		ws := &convo.OneBotWS{
 			AccessToken: cfg.Channel.AccessToken,
 			OnEvent: func(ev convo.OneBotEvent) {
+				// 戳一戳: post_type=notice + notice_type=notify + sub_type=poke。
+				//
+				// ⚠️ 只管**戳它自己**的那些 (target_id == self): 群里别人互相戳,
+				// 它不该有任何反应 —— 那是别人的互动, 不是它的。
+				// 之前这里对非 message 事件一律 return, 于是"被戳"它根本不知道。
+				if ev.PostType == "notice" && ev.NoticeType == "notify" && ev.SubType == "poke" {
+					self := parseQQ(cfg.Channel.SelfQQ)
+					if ev.TargetID == self && self > 0 {
+						uin := strconv.FormatInt(ev.UserID, 10)
+						scene := "private:" + uin
+						if ev.GroupID > 0 {
+							scene = "group:" + strconv.FormatInt(ev.GroupID, 10)
+						}
+						go func() {
+							if err := engine.HandlePoke(context.Background(), convo.PokeEvent{
+								SceneKey: scene, UIN: uin, GroupID: ev.GroupID, Private: ev.GroupID == 0,
+							}); err != nil {
+								log.Warn("convo:poke", "处理被戳失败: %v", err)
+							}
+						}()
+					}
+					return
+				}
 				if ev.PostType != "message" {
 					return
 				}

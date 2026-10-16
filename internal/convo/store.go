@@ -387,6 +387,10 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	if err := EnsureSelfActionSchema(s.DB); err != nil {
 		return fmt.Errorf("self action schema: %w", err)
 	}
+	// 戳一戳 (谁戳的、它回没回、为什么) —— 同样每一次都留痕。
+	if err := EnsurePokeSchema(s.DB); err != nil {
+		return fmt.Errorf("poke schema: %w", err)
+	}
 	// 老库回填: **只能**从 private:<uin> 那一行来 ——
 	// 群那行是「这个群的总量」, 没有 uin 维度, 从它回填是编的。
 	// 幂等, 所以每次开库跑一遍没有副作用。

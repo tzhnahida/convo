@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +27,8 @@ type fakeSelfSender struct {
 	qzoneMsg  string
 	dms       []string
 	imgs      []string
+	poked     []string // 戳回去的记录 (group/user)
+	groupMsgs []string // 群里搭话
 }
 
 func (f *fakeSelfSender) SetGroupCard(gid int64, card string) error {
@@ -57,6 +60,39 @@ func (f *fakeSelfSender) PostQzone(text string, imgs []string) (string, error) {
 }
 
 func (f *fakeSelfSender) DeleteQzone(msgID string) error { return nil }
+
+// Poke 戳回去 (PokeSender)。
+func (f *fakeSelfSender) Poke(groupID, userID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.poked = append(f.poked, fmt.Sprintf("%d/%d", groupID, userID))
+	return nil
+}
+
+// SendGroupText 群里搭话 (GroupSender)。
+func (f *fakeSelfSender) SendGroupText(groupID int64, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.groupMsgs = append(f.groupMsgs, text)
+	return nil
+}
+
+// SendGroupImage 补上 GroupSender 的第二个方法 ——
+// ⚠️ 只实现一半的话类型断言会失败, 而失败是**静默**的 (退到私聊那条路),
+// 于是"群戳该在群里搭话"的用例红在一个看不出原因的地方。
+func (f *fakeSelfSender) SendGroupImage(groupID int64, localPath string) error { return nil }
+
+func (f *fakeSelfSender) pokeCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.poked)
+}
+
+func (f *fakeSelfSender) groupMsgCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.groupMsgs)
+}
 
 func (f *fakeSelfSender) SendText(uid int64, text string) error {
 	f.mu.Lock()

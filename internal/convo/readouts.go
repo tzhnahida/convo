@@ -275,6 +275,23 @@ func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
 //
 // ⚠️ 人物层存在的理由是"群与私聊是同一个人": 只有场景层时,
 // 群里聊 900 条而私聊没聊过, 私聊那边会恒为**陌生** —— 于是永远不开口。
+// handlePokes 戳一戳的审计读入 —— 谁戳的、它回没回、为什么。
+//
+// ⚠️ 与自我表达那份审计同一个理由: 「装死」是设计的一部分,
+// 那就必须能看见它**什么时候**装死、**为什么** —— 否则看起来就是"它坏了"。
+func (s *Server) handlePokes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, map[string]interface{}{"error": "method"})
+		return
+	}
+	rows, err := s.Store.LoadPokes(intParam(r.URL.Query().Get("limit"), 30))
+	if err != nil {
+		writeJSON(w, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"pokes": PokeStatsJSON(rows)})
+}
+
 // handleSelfActions 对外动作的**审计读入** —— 它自己做过什么, 连同理由。
 //
 // ⚠️ 这个端点存在的理由与控制权那一侧对偶: 控制权交给它之后,

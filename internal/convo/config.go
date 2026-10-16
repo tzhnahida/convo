@@ -34,11 +34,52 @@ type Config struct {
 	// EnvSource 此前只在仿真和测试里被赋值过, 生产一次都没有 ——
 	// 于是天气段不存在、世界事件 0 条、心情没有外部成因。
 	Env EnvConfig `yaml:"env"`
+	// 戳一戳: 对方戳它, 它怎么回。默认关 (同自我表达: 代码上船, 线上先不动)。
+	Poke PokeConfig `yaml:"poke"`
 	// 对外自我表达: 群名片 / 头像 / 昵称 / 说说。
 	//
 	// ⚠️ 默认 `enabled: false` —— 代码先上船, 线上一个动作都不发生。
 	// 开了之后: 头像/说说/群名片**由它自己判** (视觉闸 + 它自己的 YES/NO), 决策理由全部落库。
 	SelfExpress SelfExpressConfig `yaml:"self_express"`
+}
+
+// PokeConfig 戳一戳。
+//
+// 三条设计 (owner 2026-10-16「戳一戳这个来回你想想怎么弄」):
+//
+//	① **不是每次一个样** —— 每次都秒回同一个动作, 那是摇铃不是人;
+//	② **「装死」是功能不是故障** —— 戳一戳的乐趣一半在于对方可能不理你;
+//	③ **限流必须有** —— 没有它, 连戳会把消息刷满, 而且踩风控。
+type PokeConfig struct {
+	Enabled     bool `yaml:"enabled"`
+	CooldownMin int  `yaml:"cooldown_min"` // 同一个人多久内只回一次
+	DailyCap    int  `yaml:"daily_cap"`    // 每天最多回几次
+	PokePct     int  `yaml:"poke_pct"`     // 戳回去的概率 %
+	LinePct     int  `yaml:"line_pct"`     // 搭一句话的概率 % (剩下的是装死)
+	// SleepUnlessTimes 睡着时被同一个人连戳几次才算急事 (0 = 睡着就一律不理)。
+	SleepUnlessTimes int `yaml:"sleep_unless_times"`
+	// DelayMaxSec 回之前随机等几秒 (真人不会零延迟; 测试里设 0 就是立刻)。
+	DelayMaxSec int `yaml:"delay_max_sec"`
+}
+
+// Normalized 零值纪律: 整段缺省 = 内置默认, 不是「全部归零」。
+func (c PokeConfig) Normalized() PokeConfig {
+	if c.CooldownMin <= 0 {
+		c.CooldownMin = 10
+	}
+	if c.DailyCap <= 0 {
+		c.DailyCap = 20
+	}
+	if c.PokePct <= 0 {
+		c.PokePct = 70
+	}
+	if c.LinePct <= 0 {
+		c.LinePct = 25
+	}
+	if c.SleepUnlessTimes <= 0 {
+		c.SleepUnlessTimes = 3
+	}
+	return c
 }
 
 // SelfExpressConfig 对外自我表达: 群名片 / 头像 / 昵称 / 说说。

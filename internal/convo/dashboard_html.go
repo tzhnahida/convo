@@ -295,6 +295,7 @@ var SPEC=[
   ["heatlog","/heat?limit=120"],
   ["bonds","/bonds"],
   ["selfactions","/self-actions"],
+  ["pokes","/pokes"],
   ["state","/state"]
 ];
 var TABS=[["overview","概览"],["world","世界观"],["persona","人格"],["dialog","对话"],
@@ -618,6 +619,15 @@ function pState(){
     sb.push(empty("还没有对外动作 —— 这一路默认关着 (self_express.enabled=false)"));
   }
   sb.push('<p class="hint">控制权在它手上, 但每一次决定都留在这里, **包括它拒绝的那些**。</p>');
+  var pk=(DATA.pokes||{}).pokes||[];
+  if(pk.length){
+    sb.push('<h3 class="sub">戳一戳 · 谁戳的、它回没回</h3>');
+    sb.push(tbl(["谁","回没回","为什么","时间"],pk.slice(0,12).map(function(r){
+      var how=({poke:"戳回去了",line:"搭了句话",ignore:"装死"})[r.replied]||String(r.replied||"?");
+      return "<tr><td class=\"mono\">"+esc(r.uin)+"</td><td>"+esc(how)+"</td><td>"+esc(String(r.reason||"").slice(0,40))+
+        "</td><td class=\"mono\">"+esc(String(r.ts||"").slice(5,16))+"</td></tr>";
+    })));
+  }
   out.push(card("它自己做过什么 · 对外动作",sb.join(""),errOf("selfactions"),false,""));
   out.push("</div>");
   return out.join("");

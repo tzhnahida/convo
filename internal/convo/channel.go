@@ -80,7 +80,11 @@ func (s OneBotSender) DisplayName() string {
 }
 
 type OneBotEvent struct {
-	PostType    string          `json:"post_type"` // message | notice | meta_event
+	PostType string `json:"post_type"` // message | notice | meta_event
+	// notice 事件要用的三个字段 (戳一戳: notice_type=notify, sub_type=poke)。
+	NoticeType  string          `json:"notice_type"`
+	SubType     string          `json:"sub_type"`
+	TargetID    int64           `json:"target_id"` // 被戳的人 —— 只处理"戳它自己"的那些
 	MessageType string          `json:"message_type"`
 	UserID      int64           `json:"user_id"`
 	GroupID     int64           `json:"group_id"`
@@ -487,6 +491,22 @@ func (c *OneBotClient) LoginInfo() (userID int64, nickname string, err error) {
 //
 // ⚠️ 这五个动作**未在真号上实测** —— 实测就是真改/真发。payload 形状按 OneBot v11
 // 与桥接端 (nimbus/hook, 133 个 action) 的 action 表写; 第一次执行时看日志成败。
+
+// PokeSender 戳一戳的能力 (**可选接口**, 同 GroupSender/SelfExpressSender 的理由)。
+type PokeSender interface {
+	Poke(groupID, userID int64) error
+}
+
+// Poke 戳回去。群戳走 group_poke, 私戳走 friend_poke (OneBot v11 两个不同的 action)。
+//
+// ⚠️ 形状按 v11 写 (group_poke 要 group_id+user_id, friend_poke 只要 user_id);
+// 桥接端的 action 表里三个都在 (friend_poke / group_poke / send_poke), **未实测**。
+func (c *OneBotClient) Poke(groupID, userID int64) error {
+	if groupID > 0 {
+		return c.call("group_poke", map[string]interface{}{"group_id": groupID, "user_id": userID}, nil)
+	}
+	return c.call("friend_poke", map[string]interface{}{"user_id": userID}, nil)
+}
 
 // SetGroupCard 改**这个群里的**群名片。
 //
