@@ -550,21 +550,23 @@ func TestSelfExpressTick_AutoNicknameOnceThenNotAgain(t *testing.T) {
 
 // TestOnTick_SelfExpressionRunsEvenWhenTheSchedulerSaysNothing
 //
-// ⚠️ 这条是**线上盯出来的**: selfExpressTick 原先挂在 OnTick 里那句
-// `action.Kind == ActNone → return nil` 之后, 而绝大多数 tick 都是 ActNone,
-// 于是"它自己换头像/改名"几乎永远不会发生 —— 单元测试全绿, 日志里 0 条。
-func TestOnTick_SelfExpressionRunsEvenWhenTheSchedulerSaysNothing(t *testing.T) {
+// ⚠️ 这条是**线上盯出来的**, 而且踩的是仓库里已经写过一次的坑:
+//
+// `OnTick` 只在 `action.Kind != ActNone` 时被调用 (见 stepTick 里那段 §2.5 的警告),
+// 而绝大多数 tick 的裁决就是 ActNone —— 睡眠时段更是从不说话。
+// 我把自我表达挂进 OnTick 之后, 线上日志干干净净的 0 条。
+//
+// 所以判据只能挂在**每 tick 都跑**的那一层 (stepTick), 与 maybeLearn/maybeNews 同族。
+func TestStepTick_SelfExpressionRunsEveryTick(t *testing.T) {
 	cfg := SelfExpressConfig{Enabled: true, Nickname: "auto", Card: "auto", Avatar: "off", Qzone: "off"}
 	e, _, fs, srv := newSelfExpressEngine(t, cfg, fakeScorer{}, fakeJudger{})
 	defer srv.Close()
-	if err := e.OnTick(context.Background(), TickAction{Kind: ActNone}); err != nil {
-		t.Fatal(err)
-	}
+	e.StepTick() // 就是调度器每 60 秒打的那一下
 	if fs.gotProfile() != "小夜" {
-		t.Fatal("ActNone 的那一轮也必须跑自我表达 (昵称没改)")
+		t.Fatal("每 tick 都该跑自我表达 (昵称没改)")
 	}
 	if fs.gotCard() != "小夜" {
-		t.Fatal("ActNone 的那一轮也必须改群名片 (它与「要不要说话」无关)")
+		t.Fatal("每 tick 都该改群名片 —— 它与「要不要说话」无关")
 	}
 }
 

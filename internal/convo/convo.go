@@ -1077,17 +1077,6 @@ func (e *Engine) lastOpenAgo(now time.Time) (bool, int) {
 
 // OnTick 执行 scheduler 裁决结果。
 func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
-	// 对外自我表达 (群名片 / 头像 / 昵称 / 说说)。
-	//
-	// ⚠️ **必须在下面那句早退之前** —— 2026-10-16 线上踩过:
-	// 原先它挂在 `action.Kind == ActNone` 早退之后, 而绝大多数 tick 都是 ActNone
-	// (调度器多数轮次的裁决就是"这轮不说话"), 于是"它自己换头像/改名"这件事
-	// **几乎永远不会发生** —— 代码逐行看着都对, 日志里却是干干净净的 0 条。
-	//
-	// 它本来就与"要不要跟 owner 说话"无关: 一个是社交裁决, 一个是自我表达。
-	if err := e.selfExpressTick(ctx); err != nil {
-		log.Warn("convo:self", "tick: %v", err)
-	}
 	if e.Chatter == nil || action.Kind == ActNone {
 		return nil
 	}
@@ -1539,6 +1528,14 @@ func (e *Engine) stepTick(ctx context.Context) {
 	// 而这些是"每天都该看一眼"的定时任务, 两者不是一回事。
 	e.maybeLearn(ctx)
 	e.maybeNews(ctx)
+	// 对外自我表达 (群名片 / 头像 / 昵称 / 说说) —— **第三个**同族成员。
+	//
+	// ⚠️ 2026-10-16: 它一开始被我挂在 `OnTick` 里, 于是线上日志干干净净的 0 条 ——
+	// 与上面 §2.5 那条警告**一模一样的坑, 而且就在这段注释下面十行**。
+	// 第一次"修"我还只是在 OnTick 内部往上挪, 没挪出那个函数 —— 病根是**层**不是顺序。
+	if err := e.selfExpressTick(ctx); err != nil {
+		log.Warn("convo:self", "tick: %v", err)
+	}
 
 	action := DecideTick(in, e.Cfg.Sched)
 	if action.Kind != ActNone {
