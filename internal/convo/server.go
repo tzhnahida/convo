@@ -265,7 +265,11 @@ func convoRecoveryMiddleware(next http.Handler) http.Handler {
 func convoAuthMiddleware(next http.Handler, token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if p == "/health" || p == "/" || p == "/index.html" || p == "/favicon.ico" || strings.HasPrefix(p, "/assets/") {
+		// ⚠️ 白名单只留**真的不需要凭证**的那几个。
+		// 原来这里还有 "/index.html" 与 "/assets/" —— 那是老 UI 挂在根路径时的豁免,
+		// 它搬去 /admin/ 之后这两条不再对应任何东西 (留着会让人以为根路径还挂着静态站)。
+		// ⚠️ 老 UI 现在**要凭证**才能打开 (它原来在根路径上是公开的) —— 那是收紧, 不是退化。
+		if p == "/health" || p == "/" || p == "/favicon.ico" {
 			next.ServeHTTP(w, r)
 			return
 		}
