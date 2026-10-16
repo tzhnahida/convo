@@ -361,7 +361,9 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	// 老库回填: **只能**从 private:<uin> 那一行来 ——
 	// 群那行是「这个群的总量」, 没有 uin 维度, 从它回填是编的。
 	// 幂等, 所以每次开库跑一遍没有副作用。
-	if n, err := BackfillBondPerson(s.DB, s.OwnerKey()); err != nil {
+	// ⚠️ 这里拿不到真实 owner uin (OpenStore 没有配置) → 传空 =
+	// **跳过**默认私聊那一行, 由主控带真实 uin 再补一次 (见 cmd/convo/main.go)。
+	if n, err := BackfillBondPerson(s.DB, s.OwnerKey(), ""); err != nil {
 		log.Warn("convo:value", "人物层回填失败(私聊退回读场景行): %v", err)
 	} else if n > 0 {
 		log.Info("convo:value", "§5.1 人物层回填 %d 人", n)

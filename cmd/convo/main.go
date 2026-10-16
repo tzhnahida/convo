@@ -93,6 +93,13 @@ func main() {
 		UserID:  parseQQ(cfg.Channel.OwnerQQ),
 		Lang:    cfg.Stickers.Lang,
 	}
+	// §5.1 人物层回填 (带真实 uin): OpenStore 那次拿不到 owner_qq,
+	// 于是默认私聊那一行的历史只能在这里补 —— 同一个人不许变成两笔账。
+	if n, err := convo.BackfillBondPerson(store.DB, store.OwnerKey(), cfg.Channel.OwnerQQ); err != nil {
+		log.Warn("convo:value", "人物层回填失败(私聊退回读场景行): %v", err)
+	} else if n > 0 {
+		log.Info("convo:value", "§5.1 人物层回填 %d 人 (含默认私聊)", n)
+	}
 	// §3.6 事件池预算: 主控从 convo.yaml 读一次 (零值 = 内置默认, 与「不设置」完全等价)。
 	// ⚠️ 只设一次: 这个闸门是**进程级**的 (eventgen.go 的 eventGenBud), 不是每个引擎一份。
 	convo.SetEventGenBudget(convo.EventGenBudget{

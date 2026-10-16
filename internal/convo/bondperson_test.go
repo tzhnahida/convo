@@ -70,7 +70,7 @@ func TestBackfillBondPerson_PrivateOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, err := BackfillBondPerson(s.DB, owner)
+	n, err := BackfillBondPerson(s.DB, owner, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestBackfillBondPerson_PrivateOnly(t *testing.T) {
 		t.Fatalf("群号被当成了一个人: %+v err=%v", g, err)
 	}
 	// 幂等: 再跑一遍不重复写。
-	if n2, err := BackfillBondPerson(s.DB, owner); err != nil || n2 != 0 {
+	if n2, err := BackfillBondPerson(s.DB, owner, ""); err != nil || n2 != 0 {
 		t.Fatalf("回填不幂等: n=%d err=%v", n2, err)
 	}
 }

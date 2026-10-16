@@ -98,7 +98,13 @@ func PersonUINOfScene(sceneKey string) string {
 // 群互动从这一刻起按发言人记账 (见 NoteSceneBond 与 recordGateOutcome)。
 //
 // 幂等: 逐字段取**较大的那个** —— 重复跑不会把已经累积起来的人物层打回去。
-func BackfillBondPerson(db *sql.DB, owner string) (int, error) {
+// ⚠️ `ownerUIN` 是**默认私聊的真实 uin** (配置里的 owner_qq)。
+// 为什么必须显式给: 默认私聊的场景键是**字面量** private:owner,
+// 它**不含真实 uin** —— 拿它当人物层的键, 群里的那个号与私聊会变成两笔账,
+// 而「两笔账」正是这一层要消灭的东西
+// (2026-10-16 在仿真库上实测到: 它写出了 uin=owner 那一行)。
+// 拿不到真实 uin → **跳过**那个场景: 键错了比不写更糟。
+func BackfillBondPerson(db *sql.DB, owner, ownerUIN string) (int, error) {
 	if db == nil {
 		return 0, nil
 	}
@@ -119,7 +125,12 @@ func BackfillBondPerson(db *sql.DB, owner string) (int, error) {
 			rows.Close()
 			return 0, err
 		}
-		if uin := PersonUINOfScene(sceneKey); uin != "" {
+		uin := PersonUINOfScene(sceneKey)
+		if uin == "owner" {
+			// 字面量场景键 (默认私聊) —— 只有调用方知道真实 uin 是谁。
+			uin = strings.TrimSpace(ownerUIN)
+		}
+		if uin != "" {
 			got = append(got, row{uin: uin, b: b})
 		}
 	}
