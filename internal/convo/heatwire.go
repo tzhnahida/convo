@@ -38,7 +38,9 @@ func (e *Engine) heatStageOf(sceneKey string) string {
 	if e.Store == nil || e.Store.DB == nil {
 		return HeatStageStranger
 	}
-	rec, err := LoadBond(e.Store.DB, e.ownerKey(), sceneKey)
+	// ⚠️ §5.1 **读侧的唯一入口**: 私聊读人物层, 群读本群那一行 ——
+	// 方向规则(群之间不串 / 私聊不进群)在这一行里是结构性的。
+	rec, err := e.loadBondForScene(sceneKey)
 	if err != nil {
 		return HeatStageStranger
 	}
@@ -46,7 +48,7 @@ func (e *Engine) heatStageOf(sceneKey string) string {
 	//
 	// ⚠️ 这里只改**判阶段用的那个数**, 不改关系量本身 ——
 	// "把亲密度乘上去存起来"会让"昨天还陌生今天很热"变成真的(护栏 1 禁止的正是那个)。
-	switch BondStageWithMult(rec.Bond, e.OwnerMultForScene(sceneKey)) {
+	switch BondStageSharedWithMult(rec.Bond, e.OwnerMultForScene(sceneKey)) {
 	case BondStageIntimate:
 		return HeatStageIntimate
 	case BondStageFamiliar:

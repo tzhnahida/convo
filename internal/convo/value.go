@@ -610,6 +610,11 @@ func (e *Engine) recordGateOutcome(sc SceneMsg, out GroupGateResult) {
 		if err := SaveBond(e.Store.DB, owner, sc.SceneKey, b); err != nil {
 			log.Warn("convo:value", "关系量落库失败: %v", err)
 		}
+		// §5.1 **人物层**: 群里的这一笔也要记到**这个人**头上 (owner 定规 2026-10-16)。
+		//
+		// ⚠️ 键是**发言人 uin**(sc.UIN), 不是群号 —— 群号是场景, 不是人。
+		// 方向规则由此是结构性的: 群那一行只有本群读 (`loadBondForScene`), 人物层只有私聊读。
+		e.noteBondPerson(sc.UIN, sig, e.OwnerMultForScene(sc.SceneKey))
 		// §5.6 **关系阶段落到场景行** —— 群这条路原来缺的正是这一步。
 		//
 		// ⚠️ 私聊走 `NoteSceneBond`, 它里面自带这句; 而群这条路是**直接** `SaveBond`,
@@ -884,11 +889,8 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		din.RoleNote = line
 	}
 	// §5.1 关系 (天档) —— **Loaded=false 就不注入**: 没有记录不等于陌生人。
-	if br, berr := LoadBond(e.Store.DB, owner, sceneKey); berr == nil && br.Loaded {
-		if line, ok := BondLine(br.Bond); ok {
-			din.BondNote = line
-		}
-	}
+	// ⚠️ 走**读侧唯一出口**: 群只读本群那一行 (私聊不许进群, 群之间不许串)。
+	din.BondNote = e.bondNoteForScene(sceneKey)
 	// §4.4.1b 语域漂移 (天档): 基线 = 近 7 天, 最近 = 昨天那一行。
 	// 两个都是**小查询**, 不在热路径上扫消息。
 	if base, e1 := LoadRegisterBaseline(e.Store.DB, owner, 7); e1 == nil {

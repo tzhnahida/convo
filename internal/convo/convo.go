@@ -403,7 +403,11 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		State:      state,
 		ActionKind: ActImmediate,
 		Teaching:   teaching,
-		Rejection:  e.rejectionFor(p, text),
+		// §5.1 关系 (天档): 私聊注入**人物层**那一份 ——
+		// 群与私聊是同一个人, 而这一行就是「它记得我们是什么关系」的落点。
+		// ⚠️ 段位是**天档** (段 6a3), 不会砍前缀缓存。
+		BondNote:  e.bondNoteForScene(DefaultSceneKey),
+		Rejection: e.rejectionFor(p, text),
 		// §10.3 依赖护栏: 每一条**用户消息**都过一遍 (危机必须当轮就响)。
 		GuardNote:   e.guardNote(text),
 		DayMoodNote: dayMoodNote,

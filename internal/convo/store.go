@@ -354,6 +354,18 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	if err := EnsureBondSchema(s.DB); err != nil {
 		return fmt.Errorf("bond schema: %w", err)
 	}
+	// §5.1 **人物层** (owner 定规 2026-10-16): 群与私聊按 uin 共用一个关系量。
+	if err := EnsureBondPersonSchema(s.DB); err != nil {
+		return fmt.Errorf("bond person schema: %w", err)
+	}
+	// 老库回填: **只能**从 private:<uin> 那一行来 ——
+	// 群那行是「这个群的总量」, 没有 uin 维度, 从它回填是编的。
+	// 幂等, 所以每次开库跑一遍没有副作用。
+	if n, err := BackfillBondPerson(s.DB, s.OwnerKey()); err != nil {
+		log.Warn("convo:value", "人物层回填失败(私聊退回读场景行): %v", err)
+	} else if n > 0 {
+		log.Info("convo:value", "§5.1 人物层回填 %d 人", n)
+	}
 	// §6.3 判据① 品味轨迹
 	if err := EnsureTasteSchema(s.DB); err != nil {
 		return fmt.Errorf("taste schema: %w", err)

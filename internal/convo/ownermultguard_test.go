@@ -79,7 +79,9 @@ func TestOwnerMult_PrivateIsAffected(t *testing.T) {
 	priv := SceneKeyPrivate(xbUIN)
 	// 关系量卡在"认识"的门槛附近 —— 倍率翻五倍应当把它抬上去。
 	if err := SaveBond(e.Store.DB, e.ownerKey(), priv, Bond{
-		Closeness: BondAcquaintAt + 0.01, Regard: 0.2, Familiarity: 5,
+		// ⚠️ 熟悉度要落在**真实量级** (它按 1/1000 每条涨): 种 5 等于「聊过 5000 条」,
+		// 会把互动量那一半直接顶到亲密档 —— 于是倍率还动不动就看不出来了 (2026-10-16 实测)。
+		Closeness: BondAcquaintAt + 0.01, Regard: 0.2, Familiarity: 0.1,
 	}); err != nil {
 		t.Fatal(err)
 	}

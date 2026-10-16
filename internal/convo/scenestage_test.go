@@ -80,7 +80,9 @@ func TestSceneStage_ReachesSelfRoleLine(t *testing.T) {
 	}
 	// 把关系量抬到"熟悉"。
 	if err := SaveBond(e.Store.DB, e.ownerKey(), scene, Bond{
-		Closeness: BondFamiliarAt + 0.05, Regard: 0.5, Familiarity: 5,
+		// ⚠️ 熟悉度种 5 (= 5000 条消息) 会让互动量那一半把它顶到亲密档,
+		// 而这条用例要测的是**亲密度**那半边。两种来源各有自己的用例, 别互相盖住。
+		Closeness: BondFamiliarAt + 0.05, Regard: 0.5, Familiarity: 0.1,
 	}); err != nil {
 		t.Fatal(err)
 	}

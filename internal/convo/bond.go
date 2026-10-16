@@ -125,22 +125,17 @@ const (
 
 // BondStageOf 亲密度 → 阶段。
 func BondStageOf(b Bond) BondStage {
-	switch {
-	case b.Closeness >= BondIntimateAt:
-		return BondStageIntimate
-	case b.Closeness >= BondFamiliarAt:
-		return BondStageFamiliar
-	case b.Closeness >= BondAcquaintAt:
-		return BondStageAcquaint
-	}
-	return BondStageStranger
+	// ⚠️ 阈值只在 bondStageOfValue 里写一次 —— 这里再抄一遍必然与它分叉。
+	return bondStageOfValue(b.Closeness)
 }
 
 // BondLine 注入段。
 // ⚠️ 只有**亲近**才给提示。生疏时什么都不说 —— 「我们还不熟」这种台词
 // 会把一个性格设定变成一份关系说明书。
 func BondLine(b Bond) (string, bool) {
-	if BondStageOf(b) != BondStageIntimate {
+	// ⚠️ 用**质∪量**那一条判据 (owner 定规 2026-10-16「互动量按 uin 通用」):
+	// 聊过几百条的人当然算熟 —— 只认亲密度会让「熟」这个词在群里与私聊各有一个定义。
+	if BondStageShared(b) != BondStageIntimate {
 		return "", false
 	}
 	if b.Regard >= 0.5 {

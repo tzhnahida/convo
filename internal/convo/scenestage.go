@@ -81,7 +81,9 @@ func (e *Engine) NoteSceneStage(sceneKey string, rec BondRecord) {
 	if !rec.Loaded {
 		return // 还没有关系量 = **未提供** → 不动(插入时那条 stranger 就是它该有的样子)
 	}
-	want := SceneStageFromBond(BondStageWithMult(rec.Bond, e.OwnerMultForScene(sceneKey)))
+	// ⚠️ 与 heatStageOf **同一个判据** (含互动量那半边) ——
+	// 两处各判一次会让「我们是熟人吗」有两个互相矛盾的答案。
+	want := SceneStageFromBond(BondStageSharedWithMult(rec.Bond, e.OwnerMultForScene(sceneKey)))
 	var cur string
 	if err := e.Store.DB.QueryRow("SELECT COALESCE(stage,'') FROM convo_scene WHERE scene_key=?",
 		sceneKey).Scan(&cur); err != nil {

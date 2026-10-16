@@ -81,7 +81,14 @@ func (e *Engine) NoteSceneBond(sceneKey, text string, at time.Time) {
 	sig := BondSignalsFrom(text, at)
 	sig.Msgs = 1 // 熟悉度**每条都涨** (与好坏无关)
 	// §5.7: owner 的关系倍率按**场景**取 —— 群场景恒 1.0(护栏 5)。
-	b := ApplyBondScaled(br.Bond, sig, e.OwnerMultForScene(sceneKey))
+	mult := e.OwnerMultForScene(sceneKey)
+	// §5.1 **人物层** (owner 定规 2026-10-16): 群与私聊共用同一个 uin 的量,
+	// 于是「群里聊得火热」不会再让私聊恒为陌生。
+	//
+	// ⚠️ 它在**提前 return 之前**: 场景那一行「没变」不等于人物层没变 ——
+	// 那两笔账记的不是同一个东西。
+	e.noteBondPerson(e.personUINForScene(sceneKey), sig, mult)
+	b := ApplyBondScaled(br.Bond, sig, mult)
 	if b == br.Bond {
 		return // 什么都没变, 不写库
 	}
