@@ -170,6 +170,10 @@ func (c *StickerCycle) Run(ctx context.Context, store *Store) error {
 			continue
 		}
 		if score < c.Cfg.ScoreMin {
+			// ⚠️ 刚下的文件必须删掉: 分不够只是"不入池", 不是"可以留在盘上"。
+			// 2026-10-16 线上实测: 池目录里躺着 9 个这样的孤儿 (7 张同一 gif + 2 张同一 jpg),
+			// 都是这条 continue 走掉时留下的 —— 与"473 张一样的图"是同一个毛病的两副面孔。
+			_ = osRemove(path)
 			continue
 		}
 		id, err := store.InsertSticker(r.URL, path, c.Cfg.Lang, r.From, score, digest)

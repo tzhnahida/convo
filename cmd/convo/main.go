@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -40,7 +41,7 @@ func main() {
 	adminDir := flag.String("admin-dir", "", "serve admin UI from this directory (dev, hot reload)")
 	// 一次性运维: 收拢表情包池里的重复。dry|run, 默认关。
 	// ⚠️ run 是**破坏性**的 (删行 + 删重复文件) —— 所以必须显式点名, 不许顺手跑。
-	dedupeStickers := flag.String("dedupe-stickers", "", "one-shot: collapse duplicate stickers by content (dry|run; default off)")
+	dedupeStickers := flag.String("dedupe-stickers", "", "one-shot: collapse duplicate stickers by content + prune download leftovers (dry|run; default off)")
 	flag.Parse()
 
 	cfg, err := convo.Load(*cfgPath)
@@ -71,6 +72,14 @@ func main() {
 		}
 		log.Info("convo:sticker", "池去重 %s: %d 行 → %d 行 (合并 %d 行, 删重复文件 %d 个, 无文件 %d 行, 剩 %d 张不同的图)",
 			mode, rep.RowsBefore, rep.RowsAfter, rep.Dropped, rep.FilesGone, rep.NoFile, rep.Groups)
+		// 顺手扫掉「下载了但没入池」的残留 (分数没过门槛时留下的半成品)。
+		// 池目录默认就是内置包目录 → 那里只认下载器的命名形状, 用户放的图一律不碰。
+		poolDir := filepath.Join(cfg.Stickers.Dir, cfg.Stickers.Lang)
+		if n, perr := store.PruneOrphanDownloads(poolDir, dry); perr != nil {
+			log.Warn("convo:sticker", "下载残留扫描失败: %v", perr)
+		} else {
+			log.Info("convo:sticker", "下载残留 %s: %d 个 (%s)", mode, n, poolDir)
+		}
 		return
 	}
 

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -206,6 +208,54 @@ func (s *Store) DedupeStickers(dryRun bool) (DedupeReport, error) {
 	}
 	rep.RowsAfter = rep.RowsBefore - rep.Dropped
 	return rep, nil
+}
+
+// orphanDownloadRe 认出**下载器自己**写下的文件名: <纳秒>_<url hash 8 位>.<ext>。
+//
+// ⚠️ 只删匹配这个形状的文件。池目录**默认就是内置包目录** —— 用户往里丢一张图
+// 完全合法 (下次启动会被种子化)。为了"扫个孤儿"把用户刚放进去的图删掉, 是绝对
+// 不许发生的事; 形状不对就一律不碰。
+var orphanDownloadRe = regexp.MustCompile("^[0-9]{10,}_[0-9a-f]{8}\\.(gif|png|jpe?g|webp)$")
+
+// PruneOrphanDownloads 清掉"下载了但没入池"的残留 (分数没过门槛 / 中途换下一张)。
+//
+// 判据只有一条: **池里没有任何行指着这个文件**, 且文件名是下载器的形状。
+// 目录不存在 / 是空的都算没有孤儿 —— 那不是错误, 不该让运维命令失败。
+func (s *Store) PruneOrphanDownloads(dir string, dryRun bool) (int, error) {
+	if strings.TrimSpace(dir) == "" {
+		return 0, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, nil
+	}
+	have := map[string]bool{}
+	rows, err := s.DB.Query("SELECT COALESCE(local_path,'') FROM stickers")
+	if err != nil {
+		return 0, err
+	}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		have[filepath.Base(p)] = true
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() || have[e.Name()] || !orphanDownloadRe.MatchString(e.Name()) {
+			continue
+		}
+		n++
+		if !dryRun {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	return n, nil
 }
 
 func isRegularFile(path string) bool {
