@@ -57,7 +57,13 @@ echo "    ✓ 两端一致"
 echo "=== 3/5 备份 + 安装 ==="
 # 时间戳在**本地**取好再传进去 —— 远端展开会被外层 shell 先吃掉一次。
 TAG=$(date +%Y%m%d-%H%M%S)
+# 备份 + 安装; 备份之后**顺手只留最近 3 份**。
+#
+# 为什么必须清理: 这段以前只有 cp 没有 prune。到 2026-10-16 线上攒了
+# 126 份备份 / 2.2GB —— 29G 的 SD 卡只剩 7.7G。每次部署 18MB, 而部署是
+# 高频动作, 于是「安全措施」自己变成了磁盘杀手。
 ssh "$PI" "cd $DIR && cp convo convo.bak-$TAG && mv convo.new convo && chmod +x convo && echo 备份=convo.bak-$TAG"
+ssh "$PI" "cd $DIR && ls -t convo.bak-* | tail -n +4 | xargs -r rm -f ; echo 现存备份=$(ls convo.bak-* | wc -l) 份"
 
 echo "=== 4/5 重启 ==="
 ssh "$PI" "sudo -n systemctl restart convo && sleep 6 && systemctl is-active convo"
