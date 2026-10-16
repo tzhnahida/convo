@@ -61,11 +61,17 @@ type SelfExpressConfig struct {
 	Card     string `yaml:"card"`
 	// CardText 群名片固定文案。空 = 用 group.self_aliases 的第一个 (通常是「小夜」)。
 	CardText string `yaml:"card_text"`
+	// NicknameText 账号昵称文案 (空 = 人格名 → self_aliases 第一个)。
+	//
+	// ⚠️ 昵称是**全局**的 (所有好友与群都看得见), 所以它的限频最长 (默认 90 天):
+	// 换人格时它该跟着换, 但「隔三差五改名」是机器行为, 不是人。
+	NicknameText string `yaml:"nickname_text"`
 	// 限频。三条理由: 风控 (账号级动作比发消息显眼)、人味 (频繁换头像/天天发说说
 	// 是典型的机器行为)、以及"每天都做同一件事"会让它变成一台发布机。
-	AvatarMinDays int `yaml:"avatar_min_days"`
-	QzoneMinDays  int `yaml:"qzone_min_days"`
-	CardMinHours  int `yaml:"card_min_hours"`
+	AvatarMinDays   int `yaml:"avatar_min_days"`
+	QzoneMinDays    int `yaml:"qzone_min_days"`
+	CardMinHours    int `yaml:"card_min_hours"`
+	NicknameMinDays int `yaml:"nickname_min_days"`
 	// DailyCap 每天最多几次对外动作 (所有 kind 合计)。
 	DailyCap int `yaml:"daily_cap"`
 	// Images 图从哪来 —— 见 ImageSourceConfig。
@@ -172,6 +178,9 @@ func (c SelfExpressConfig) Normalized() SelfExpressConfig {
 	}
 	if c.CardMinHours <= 0 {
 		c.CardMinHours = 20
+	}
+	if c.NicknameMinDays <= 0 {
+		c.NicknameMinDays = 90
 	}
 	if c.DailyCap <= 0 {
 		c.DailyCap = 2

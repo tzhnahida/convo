@@ -210,6 +210,55 @@ func (e *Engine) GroupCardText(cfg SelfExpressConfig) string {
 	return "小夜"
 }
 
+// NicknameText 账号昵称的文案 —— 空配置 → 人格名 → self_aliases 第一个。
+//
+// ⚠️ 它与群名片分开: 群名片只影响一个群, 昵称影响**所有好友与群**。
+func (e *Engine) NicknameText(cfg SelfExpressConfig, p *PersonaProfile) string {
+	if t := strings.TrimSpace(cfg.NicknameText); t != "" {
+		return t
+	}
+	if p != nil && strings.TrimSpace(p.Name) != "" {
+		return strings.TrimSpace(p.Name)
+	}
+	return e.GroupCardText(cfg)
+}
+
+// maybeNickname 账号昵称: 与群名片同一套形状 (文案没变就不动 + 限频),
+// 但限频长得多 —— 它是全局的, 「隔三差五改名」是机器行为。
+func (e *Engine) maybeNickname(ctx context.Context, sender SelfExpressSender, cfg SelfExpressConfig, p *PersonaProfile) error {
+	want := e.NicknameText(cfg, p)
+	if want == "" {
+		return nil
+	}
+	last, ok, _ := e.Store.LastSelfAction(SelfKindNickname)
+	if ok && strings.TrimSpace(last.Payload) == want {
+		return nil // 已经是这个名字了
+	}
+	if ok {
+		ts, perr := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(last.AppliedTS), time.Local)
+		if perr == nil && time.Since(ts) < time.Duration(cfg.NicknameMinDays)*24*time.Hour {
+			return nil
+		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	a := SelfAction{Kind: SelfKindNickname, Mode: "auto", Payload: want,
+		Decision: fmt.Sprintf("auto: 昵称跟人格名同步 (限频 %d 天)", cfg.NicknameMinDays)}
+	if err := sender.SetProfile(want, ""); err != nil {
+		a.State, a.Result = SelfStateFailed, err.Error()
+		_, _ = e.Store.InsertSelfAction(a)
+		return fmt.Errorf("set_qq_profile: %w", err)
+	}
+	a.State, a.Result = SelfStateApplied, "昵称 → "+want
+	a.AppliedTS = clock.Now().Format("2006-01-02 15:04:05")
+	if _, err := e.Store.InsertSelfAction(a); err != nil {
+		return err
+	}
+	log.Info("convo:self", "昵称改了: %q", want)
+	return nil
+}
+
 // selfExpressTick 每 tick 看一眼「要不要对外做点什么」。
 //
 // ⚠️ 它**不进 DecideTick**: 那边的裁决是「要不要跟 owner 说话」, 这里是「要不要动」,
@@ -234,6 +283,12 @@ func (e *Engine) selfExpressTick(ctx context.Context) error {
 	if cfg.Mode(SelfKindCard, "auto") == "auto" {
 		if err := e.maybeGroupCard(ctx, sender, cfg); err != nil {
 			log.Warn("convo:self", "群名片: %v", err)
+		}
+	}
+	// ①b 账号昵称 (默认 propose; 换人格时设 auto): 同一套形状, 限频最长。
+	if cfg.Mode(SelfKindNickname, "propose") == "auto" {
+		if err := e.maybeNickname(ctx, sender, cfg, p); err != nil {
+			log.Warn("convo:self", "昵称: %v", err)
 		}
 	}
 	// ② 头像 / 说说 (默认 auto): 抓图 → 视觉闸 → 它自己判 → 做。

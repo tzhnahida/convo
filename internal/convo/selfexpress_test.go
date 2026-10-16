@@ -78,6 +78,12 @@ func (f *fakeSelfSender) gotAvatar() string {
 	return f.avatar
 }
 
+func (f *fakeSelfSender) gotProfile() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.profile
+}
+
 func (f *fakeSelfSender) gotCard() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -509,6 +515,36 @@ func TestSelfExpress_OwnerSaysNo(t *testing.T) {
 	}
 	if _, ok, _ := st.PendingSelfAction(); ok {
 		t.Fatal("待办应当被结清 (记为 rejected)")
+	}
+}
+
+// TestSelfExpressTick_AutoNicknameOnceThenNotAgain
+//
+// 昵称是**全局**动作: 换人格时它该跟着换一次, 然后**不许反复改** ——
+// 「隔三差五改名」是机器行为, 不是人。
+func TestSelfExpressTick_AutoNicknameOnceThenNotAgain(t *testing.T) {
+	cfg := SelfExpressConfig{Enabled: true, Nickname: "auto", Avatar: "off", Qzone: "off", Card: "off"}
+	e, st, fs, srv := newSelfExpressEngine(t, cfg, fakeScorer{}, fakeJudger{})
+	defer srv.Close()
+	ctx := context.Background()
+	if err := e.selfExpressTick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fs.gotProfile() != "小夜" {
+		t.Fatalf("昵称应当跟人格名走, 实为 %q", fs.gotProfile())
+	}
+	if err := e.selfExpressTick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := st.LoadSelfActions(20)
+	n := 0
+	for _, r := range rows {
+		if r.Kind == SelfKindNickname && r.State == SelfStateApplied {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("第二次 tick 不该再改一次 (applied=%d)", n)
 	}
 }
 
