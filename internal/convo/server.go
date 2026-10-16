@@ -136,6 +136,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/convo/night-peers", s.routeNightPeers)
 	// §7.4 遗忘权 (物理删除 + 立碑)
 	mux.HandleFunc("/api/v1/convo/forget", s.handleForget)
+	// 读数面 (2026-10-16): 时序图 / 关系两层 / 内部状态一屏。
+	// ⚠️ 三个都**只读** —— 观测台改状态会让看见的和发生的互相影响。
+	mux.HandleFunc("/api/v1/convo/series", s.handleSeries)
+	mux.HandleFunc("/api/v1/convo/bonds", s.handleBonds)
+	mux.HandleFunc("/api/v1/convo/state", s.handleState)
 	// 看板 (零构建, Go 直接吐) + 决策轨迹
 	mux.HandleFunc("/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/v1/convo/traces", s.handleTraces)
