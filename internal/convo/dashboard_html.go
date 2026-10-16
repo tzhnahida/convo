@@ -476,6 +476,14 @@ function stageBadge(s){
   var c=m[s]||"#94a3b8";
   return '<span class="chip" style="color:'+c+'">'+esc(s||"?")+"</span>";
 }
+// selfKindName / selfStateText 对外动作的两个中文名 (审计那块用)。
+function selfKindName(k){
+  return ({card:"群名片",avatar:"头像",nickname:"昵称",qzone:"说说"})[k]||String(k||"?");
+}
+function selfStateText(s){
+  return ({applied:"已做",rejected:"它说不要",pending:"等你一个字",failed:"没成"})[s]||String(s||"?");
+}
+
 function pState(){
   var s=DATA.state||{}, bd=DATA.bonds||{}, hl=DATA.heatlog||{}, ms=DATA.msgs||{}, cn=DATA.counters||{};
   var mood=s.mood||{}, fx=s.fatigue||{}, ef=s.body_effect||{}, body=s.body||{}, night=s.sleep||{};
@@ -588,6 +596,24 @@ function pState(){
     ab.push(chBars(rounds.map(function(d){return {label:d.day,value:Number(d.n)||0};})));
   }
   out.push(card("活动 · 最近 30 天",ab.join(""),errOf("msgs"),false,""));
+  // —— 卡 5: 它自己做过什么 (对外动作的审计) ——
+  //
+  // 控制权交给它之后, 唯一能让 owner 放心的东西就是"每一次决定都能回看"。
+  // 所以这里连它**拒绝**的那些也列出来 —— 拒绝也是一次决定。
+  var sb=[];
+  var acts=(DATA.selfactions||{}).actions||[];
+  if(acts.length){
+    sb.push(tbl(["动作","状态","它自己的判断 / 结果","时间"],acts.slice(0,20).map(function(r){
+      var when=String(r.applied_ts||r.created_ts||"").slice(5,16);
+      return "<tr><td>"+esc(selfKindName(r.kind))+"</td><td>"+esc(selfStateText(r.state))+
+        '</td><td>'+esc(String(r.decision||r.result||"—")).slice(0,90)+
+        '</td><td class="mono">'+esc(when)+"</td></tr>";
+    })));
+  }else{
+    sb.push(empty("还没有对外动作 —— 这一路默认关着 (self_express.enabled=false)"));
+  }
+  sb.push('<p class="hint">控制权在它手上, 但每一次决定都留在这里, **包括它拒绝的那些**。</p>');
+  out.push(card("它自己做过什么 · 对外动作",sb.join(""),errOf("selfactions"),false,""));
   out.push("</div>");
   return out.join("");
 }
