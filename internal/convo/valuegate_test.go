@@ -14,6 +14,10 @@ func gateEngine(t *testing.T) *Engine {
 	// 99 = 永不命中随机通道; 话题通道在本 helper 的库里也没有素材 (没灵光/没学过的),
 	// 所以基线行为就是"判不出 → 沉默"。要测插话的用例自己设 ChimeRollFn。
 	e.ChimeRollFn = func(n int) int { return 99 }
+	// ⚠️ 心情也要钉住 —— 与骰子同一个理由, 而且这次是真的踩过:
+	// 「无来由的低意愿日」按**日期**确定性抽取 (约 15%), 抽中的那天里
+	// 「被 @ 必答」的断言会必红。2026-10-17 00:06 跨过午夜时套件就红了那两条。
+	e.DayMoodFn = func(string) DayMood { return DayMoodFlat }
 	return e
 }
 

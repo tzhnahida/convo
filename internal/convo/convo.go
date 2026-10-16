@@ -67,6 +67,12 @@ type Engine struct {
 
 	// ChimeRollFn 插话掷骰, nil = Dice。**测试注入用**。
 	ChimeRollFn func(n int) int
+	// DayMoodFn 今天是什么日子 (低意愿/高意愿/平常), nil = DayMoodOf(今天)。**测试注入用**。
+	//
+	// ⚠️ 理由与 ChimeRollFn 一模一样: 它是**按日期**确定性的, 而约 15% 的日子是低意愿日 ——
+	// 那一天里「被 @ 必答」这类用例会**必红**。2026-10-17 00:06 就撞上了:
+	// 跨过午夜, 套件突然红了, 而代码一行没动, 查起来像见鬼。
+	DayMoodFn func(day string) DayMood
 
 	Store   *Store
 	Cfg     Config
@@ -1207,7 +1213,7 @@ func (e *Engine) proactive(ctx context.Context, p *PersonaProfile, in DialogInpu
 	// 碰它有回归风险。而"今天不主动开口"本来就只是一句 return。
 	// ⚠️ 只拦 ActActiveOpen —— 中断-恢复 (ActResume) 是"接着说", 不是"开口",
 	// 拦它会把"回到刚才那句话"变成又一次消失。
-	if DayMoodBlocksAction(in.ActionKind, DayMoodOf(clock.Today())) {
+	if DayMoodBlocksAction(in.ActionKind, e.dayMood()) {
 		log.Info("convo:engine", "今天不开场 (低意愿日) —— 无归因, 不写 MoodLog")
 		return nil
 	}
@@ -1445,6 +1451,17 @@ func (e *Engine) StartTicker(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// dayMood 今天是什么日子 —— 走钩子 (见 DayMoodFn 的注释)。
+//
+// ⚠️ 不要在这里直接写 DayMoodOf(clock.Today()): 那样测试就只能依赖真实日期,
+// 而 15% 的日子会让"被 @ 必答"的断言必红 (2026-10-17 就是这么红的)。
+func (e *Engine) dayMood() DayMood {
+	if e.DayMoodFn != nil {
+		return e.DayMoodFn(clock.Today())
+	}
+	return DayMoodOf(clock.Today())
 }
 
 func (e *Engine) stepTick(ctx context.Context) {

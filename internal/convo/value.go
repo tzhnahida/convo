@@ -461,7 +461,7 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		}
 		// 低意愿日: @ 了也可能不回 —— 这是「漏」在这个系统里的唯一形态。
 		// ⚠️ 它**不是**"没看见", 是"看见了, 今天不想说"。
-		if DayMoodSilencesAtReply(DayMoodOf(clock.Today())) {
+		if DayMoodSilencesAtReply(e.dayMood()) {
 			res.Stance = StanceSilent
 			res.Reason = "被 @, 但今天不想说话 (低意愿日)"
 			return e.withConflict(sc, res)
