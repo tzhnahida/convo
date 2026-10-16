@@ -224,6 +224,20 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	// 实测代价: Pi 上这套迁移挂了整整一个月, 记忆写入全废, 夜间批第 1 步就死。
 	// **一组迁移只许挂在自己的检查下面。**
 	// 记忆归属 / 注入反馈 / 计划终态 (§7.3 三维同理)
+	// §6.10.2 ③ **引用回复**: 这条在回哪一条。
+	//
+	// ⚠️ 三列一起加, 而它们各自都有用:
+	//
+	//   · `msg_id`   —— 平台侧那条消息的 id (OneBot 的 message_id) ✓;
+	//   · `day_seq`  —— **当天该场景内的序号** (1,2,3…) ✓, 人读得懂、模型也找得到 ✓;
+	//   · `reply_to` —— 这条引用的是哪个 `msg_id` ✓。
+	//
+	// ⚠️ 没有 `msg_id` 就没法把引用**回查**成原文 ✗ ——
+	// 而"收到一个 `reply` 段、里面只有一个 id"正是平台的真实形状 ✓。
+	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN msg_id TEXT DEFAULT ''`)
+	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN day_seq INTEGER DEFAULT 0`)
+	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN reply_to TEXT DEFAULT ''`)
+
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN source TEXT DEFAULT 'user_said'`)
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN last_injected_ts TEXT DEFAULT ''`)
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN inject_count INTEGER DEFAULT 0`)
@@ -524,6 +538,10 @@ type MessageRecord struct {
 	SenderUIN string
 	// AtUINs 这条消息 @ 了谁 (§6.9 信号 ②)。空 = 没 @ 任何人。
 	AtUINs []string
+	// §6.10.2 ③ 引用回复: 平台 id / 当天序号 / 这条在回哪一条 ✓。
+	MsgID   string
+	DaySeq  int
+	ReplyTo string
 
 	ID      int64  `json:"id"`
 	TS      string `json:"ts"`
@@ -569,20 +587,26 @@ type MsgMeta struct {
 	// ⚠️ **它只服务于冲突四信号里的 ② 互相 @** —— 而那个信号原来是**算不出来**的,
 	// 因为库里根本没存过 @ 目标。缺了它, 冲突门槛实际是 3/3。
 	AtUINs []string
+	// MsgID 平台侧那条消息的 id (§6.10.2 ③ 引用回复要按它回查) ✓。
+	// 空 = 未提供(老消息、夜间批产物)✓。
+	MsgID string
+	// ReplyTo 这条**引用**的是哪个 MsgID ✓。空 = 不是引用回复 ✓。
+	ReplyTo string
 }
 
 // InsertMessageFull 带完整分区信息的写入 (群路径与 §3.7 夜间批用这个)。
 func (s *Store) InsertMessageFull(dir, channel, kind, payload string, meta MsgMeta) (int64, error) {
-	return s.insertMessage(dir, channel, kind, payload, meta.Origin, meta.SceneKey, meta.SenderUIN, JoinAtUINs(meta.AtUINs))
+	return s.insertMessage(dir, channel, kind, payload, meta.Origin, meta.SceneKey, meta.SenderUIN, JoinAtUINs(meta.AtUINs), meta.MsgID, meta.ReplyTo)
 }
 
 // InsertMessageEx 带分区信息的写入。§3.7 的夜间批算**必须**用这个入口,
 // 且 origin 恒为 OriginAIToAI —— 走默认那条会把 AI 之间的对话标成"它对真人说的"。
 func (s *Store) InsertMessageEx(dir, channel, kind, payload, origin, sceneKey string) (int64, error) {
-	return s.insertMessage(dir, channel, kind, payload, origin, sceneKey, "", "")
+	// ⚠️ 夜间批产物**没有平台 id、也不引用谁** ✓ —— 两个空串是"未提供" ✓, 不是"空 id" ✓。
+	return s.insertMessage(dir, channel, kind, payload, origin, sceneKey, "", "", "", "")
 }
 
-func (s *Store) insertMessage(dir, channel, kind, payload, origin, sceneKey, senderUIN, atUINs string) (int64, error) {
+func (s *Store) insertMessage(dir, channel, kind, payload, origin, sceneKey, senderUIN, atUINs, msgID, replyTo string) (int64, error) {
 	if origin == "" {
 		origin = DefaultOriginFor(dir) // 零值 = 未提供 → 按 dir 推, 不是"空来源"
 	}
@@ -590,8 +614,22 @@ func (s *Store) insertMessage(dir, channel, kind, payload, origin, sceneKey, sen
 		sceneKey = DefaultSceneKey
 	}
 
-	res, err := s.DB.Exec(`INSERT INTO convo_messages(ts, dir, channel, kind, payload_json, origin, scene_key, sender_uin, at_uins)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`, clock.TodayTS(), dir, channel, kind, payload, origin, sceneKey, senderUIN, atUINs)
+	// §6.10.2 ③ **当天该场景内的序号** ✓ —— 引用回复要按它指认("回复第 12 条") ✓。
+	//
+	// ⚠️ 序号是**每个场景各自的** ✓, 而"当天"按 `ts >= 今天 00:00` 算 ✓
+	// (与 `clock.TodayTS()` 同一个日期串 ✓, 不另立一套时间口径 ✓)。
+	//
+	// ⚠️ 并发下可能重号 —— 而序号只用于**人读**与**引用指认** ✓,
+	// 重号的后果是"两条都叫第 7 条" ✓, 不是数据损坏 ✓;
+	// ⚠️ 那比为了唯一性去加一把锁便宜得多 ✓(这条路边是每条群消息 ✓)。
+	var daySeq int
+	_ = s.DB.QueryRow(`SELECT COALESCE(MAX(day_seq),0)+1 FROM convo_messages WHERE scene_key=? AND ts >= ?`,
+		sceneKey, clock.Today()+" 00:00:00").Scan(&daySeq)
+
+	res, err := s.DB.Exec(`INSERT INTO convo_messages(ts, dir, channel, kind, payload_json, origin, scene_key, sender_uin, at_uins, msg_id, day_seq, reply_to)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		clock.TodayTS(), dir, channel, kind, payload, origin, sceneKey, senderUIN, atUINs,
+		msgID, daySeq, replyTo)
 	if err != nil {
 		return 0, err
 	}

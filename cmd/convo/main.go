@@ -234,7 +234,15 @@ func main() {
 							//
 							// ⚠️ 不写它, 冲突判定就只剩 ①③④ 三个信号, 而门槛要 3 个 ——
 							// 也就是说**三个必须全中**, 判出冲突会难得多。
-							AtUINs: ev.AtUINs()}); err != nil {
+							AtUINs: ev.AtUINs(),
+							// §6.10.2 ③ **引用回复**: 存住平台 id 与"这条在回哪一条" ✓。
+							//
+							// ⚠️ `msg_id` 是**回查的钥匙** ✓ —— OneBot 的 reply 段里通常
+							// 只有 id 没有正文 ✗, 所以"把被引用的原话附在后面"这件事
+							// 只能靠拿这个 id 回查我们自己存过的那条 ✓。
+							MsgID:   strconv.FormatInt(int64(ev.MessageID), 10),
+							ReplyTo: ev.ReplyToMsgID(),
+						}); err != nil {
 						log.Warn("convo:channel", "store group msg: %v", err)
 					} else {
 						// ⚠️ **成功也要出声** (2026-10-14)。
