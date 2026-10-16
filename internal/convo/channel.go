@@ -30,8 +30,14 @@ type OneBotClient struct {
 	apiBase     string
 	accessToken string
 	http        *http.Client
-	selfQQ      int64  // 登录信息回填 (小夜自己的 QQ)
-	selfName    string // 登录信息回填 (昵称)
+	// long 给**账号级动作**用的慢通道 (换头像 / 改昵称 / 群名片 / 说说)。
+	//
+	// ⚠️ 2026-10-16 实测: set_group_card 在桥接端要 30 秒以上才回, 20 秒的聊天超时
+	// 会把它掐掉 (而它其实成功了)。聊天那条路仍走快的 20 秒 —— 一条消息发不出去
+	// 不该把一整个 tick 卡 90 秒。
+	long     *http.Client
+	selfQQ   int64  // 登录信息回填 (小夜自己的 QQ)
+	selfName string // 登录信息回填 (昵称)
 }
 
 func NewOneBotClient(apiBase, accessToken string) *OneBotClient {
@@ -39,6 +45,7 @@ func NewOneBotClient(apiBase, accessToken string) *OneBotClient {
 		apiBase:     apiBase,
 		accessToken: accessToken,
 		http:        &http.Client{Timeout: 20 * time.Second},
+		long:        &http.Client{Timeout: 90 * time.Second},
 	}
 }
 
@@ -330,6 +337,15 @@ func IsUnknownOutcome(err error) bool {
 // 而重发的症状是群里多出一条消息 —— 那要等人抱怨才发现。
 // 宁可要看得见的坏, 不要看不见的坏。
 func (c *OneBotClient) call(action string, params interface{}, out interface{}) error {
+	return c.callWith(c.http, action, params, out)
+}
+
+// callLong 账号级动作走这条 (90 秒)。其余逻辑与 call 完全相同: 双轨 + 结局未知收手。
+func (c *OneBotClient) callLong(action string, params interface{}, out interface{}) error {
+	return c.callWith(c.long, action, params, out)
+}
+
+func (c *OneBotClient) callWith(hc *http.Client, action string, params interface{}, out interface{}) error {
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return err
@@ -340,7 +356,7 @@ func (c *OneBotClient) call(action string, params interface{}, out interface{}) 
 	}
 	var lastErr error
 	// 轨1: 标准轨 + 裸 payload
-	if err := c.callOnce(c.apiBase+"/"+action, raw, out); err == nil {
+	if err := c.callOnce(hc, c.apiBase+"/"+action, raw, out); err == nil {
 		return nil
 	} else {
 		lastErr = err
@@ -354,7 +370,7 @@ func (c *OneBotClient) call(action string, params interface{}, out interface{}) 
 		}
 	}
 	// 轨2: body 轨 + 包装 (兜底)
-	if err := c.callOnce(c.apiBase, wrapped, out); err == nil {
+	if err := c.callOnce(hc, c.apiBase, wrapped, out); err == nil {
 		return nil
 	} else {
 		lastErr = err
@@ -363,7 +379,7 @@ func (c *OneBotClient) call(action string, params interface{}, out interface{}) 
 	return lastErr
 }
 
-func (c *OneBotClient) callOnce(url string, body []byte, out interface{}) error {
+func (c *OneBotClient) callOnce(hc *http.Client, url string, body []byte, out interface{}) error {
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -372,7 +388,7 @@ func (c *OneBotClient) callOnce(url string, body []byte, out interface{}) error 
 	if c.accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.accessToken)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		// ⚠️ **一律算"结局未知"** —— 这里不细分超时/拒连/中断。
 		//
@@ -476,7 +492,7 @@ func (c *OneBotClient) LoginInfo() (userID int64, nickname string, err error) {
 //
 // 群名片是"它在这个群自愿用的名字", 与账号昵称分开 —— 所以它比改昵称安全得多。
 func (c *OneBotClient) SetGroupCard(groupID int64, card string) error {
-	return c.call("set_group_card", map[string]interface{}{
+	return c.callLong("set_group_card", map[string]interface{}{
 		"group_id": groupID,
 		"card":     card,
 	}, nil)
@@ -496,14 +512,15 @@ func (c *OneBotClient) SetProfile(nickname, personalNote string) error {
 	if len(p) == 0 {
 		return errors.New("set_qq_profile: 昵称与签名至少要给一个")
 	}
-	return c.call("set_qq_profile", p, nil)
+	// ⚠️ 慢通道: 桥接端这一路会**连签名一起改**, 签名那次调用实测要 30 秒以上才超时回来。
+	return c.callLong("set_qq_profile", p, nil)
 }
 
 // SetAvatar 换头像 (本地图片路径)。
 //
 // 绝对路径 —— 桥接方用自己的 cwd 解析相对路径 (同 SendGroupImage 的 AbsMediaPath)。
 func (c *OneBotClient) SetAvatar(localPath string) error {
-	return c.call("set_qq_avatar", map[string]interface{}{
+	return c.callLong("set_qq_avatar", map[string]interface{}{
 		"file": AbsMediaPath(localPath),
 	}, nil)
 }
@@ -511,28 +528,37 @@ func (c *OneBotClient) SetAvatar(localPath string) error {
 // PostQzone 发一条说说 (文字 + 最多几张图), 返回桥接端给的 msg id (可能为空)。
 //
 // ⚠️ 说说与聊天是**两种东西**: 聊天是跟某个人说话, 说说是在**别人看得见的地方挂一块牌子**。
-// 所以调用点必须写清"这条会被别人看见"。
+// 所以调用点必须写清「这条会被别人看见」。
+//
+// ⚠️ 字段名来自 2026-10-16 对桥接端的**实测**, 不是猜的:
+//
+//	{"message":[...]}  → retcode 100「说说正文不能为空」
+//	{"text":"..."}     → retcode 100「说说正文不能为空」
+//	{"content":"..."}  → ok, 返回 tid   ← 所以用这个
+//
+// 配图字段名 (`images`) 是同源惯例, **未实测** —— 桥接端若不认, 至少正文能发出去。
 func (c *OneBotClient) PostQzone(text string, imagePaths []string) (string, error) {
-	segs := []OneBotSegment{}
-	if t := strings.TrimSpace(text); t != "" {
-		segs = append(segs, OneBotSegment{Type: "text", Data: map[string]string{"text": t}})
-	}
+	text = strings.TrimSpace(text)
+	imgs := []string{}
 	for _, p := range imagePaths {
-		if strings.TrimSpace(p) == "" {
-			continue
+		if strings.TrimSpace(p) != "" {
+			imgs = append(imgs, AbsMediaPath(p))
 		}
-		segs = append(segs, OneBotSegment{Type: "image", Data: map[string]string{"file": AbsMediaPath(p)}})
 	}
-	if len(segs) == 0 {
+	if text == "" && len(imgs) == 0 {
 		return "", errors.New("send_qzone_msg: 文字与图片不能都为空")
 	}
-	var d struct {
-		MessageID json.Number `json:"message_id"`
+	params := map[string]interface{}{"content": text}
+	if len(imgs) > 0 {
+		params["images"] = imgs
 	}
-	if err := c.call("send_qzone_msg", map[string]interface{}{"message": segs}, &d); err != nil {
+	var d struct {
+		TID string `json:"tid"`
+	}
+	if err := c.callLong("send_qzone_msg", params, &d); err != nil {
 		return "", err
 	}
-	return d.MessageID.String(), nil
+	return d.TID, nil
 }
 
 // DeleteQzone 删掉一条说说 (回滚用)。
@@ -540,5 +566,5 @@ func (c *OneBotClient) DeleteQzone(msgID string) error {
 	if strings.TrimSpace(msgID) == "" {
 		return errors.New("delete_qzone_msg: msg id 为空")
 	}
-	return c.call("delete_qzone_msg", map[string]interface{}{"message_id": msgID}, nil)
+	return c.callLong("delete_qzone_msg", map[string]interface{}{"message_id": msgID}, nil)
 }

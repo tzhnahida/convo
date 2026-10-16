@@ -180,6 +180,26 @@ func SelfActionsJSON(as []SelfAction) []map[string]interface{} {
 	return out
 }
 
+// selfFailBackoff 一次失败之后, 这一类动作多久内不再试。
+//
+// 6 小时是个折中: 桥接端要么几分钟内恢复 (那 6 小时太长), 要么是它自己的某个接口
+// 根本不通 (那 6 小时正合适 —— 它不该每 60 秒去撞一次)。
+const selfFailBackoff = 6 * time.Hour
+
+// LastSelfAttempt 某一类动作**最近一次尝试** (不管成没成) —— 退避用它。
+func (s *Store) LastSelfAttempt(kind string) (time.Time, string, bool) {
+	var created, state string
+	row := s.DB.QueryRow("SELECT COALESCE(created_ts, ''), state FROM convo_selfaction WHERE kind=? ORDER BY id DESC LIMIT 1", kind)
+	if err := row.Scan(&created, &state); err != nil {
+		return time.Time{}, "", false
+	}
+	ts, perr := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(created), time.Local)
+	if perr != nil {
+		return time.Time{}, "", false
+	}
+	return ts, state, true
+}
+
 // selfExpressSender 拿通道的自我表达能力 (可选接口, 拿不到就是没有)。
 func (e *Engine) selfExpressSender() (SelfExpressSender, bool) {
 	if e.Sender == nil {
@@ -308,7 +328,16 @@ func (e *Engine) selfExpressTick(ctx context.Context) error {
 }
 
 // selfKindDue 限频: 这一类动作够久没做了吗。
+//
+// ⚠️ 失败也要退避 (2026-10-16 线上): 一次失败如果下一 tick 就重试, 等于每 60 秒撞一次
+// 桥接端 —— 而桥接端对连续失败的动作会**熔断** (实测 retcode 1003「该 action 已被熔断」),
+// 于是"重试"把一条暂时不通的路彻底堵死。失败退避默认 6 小时。
 func (e *Engine) selfKindDue(kind string, cfg SelfExpressConfig) bool {
+	if at, state, ok := e.Store.LastSelfAttempt(kind); ok && state == SelfStateFailed {
+		if time.Since(at) < selfFailBackoff {
+			return false
+		}
+	}
 	last, ok, err := e.Store.LastSelfAction(kind)
 	if err != nil || !ok {
 		return true

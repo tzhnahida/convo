@@ -132,7 +132,8 @@ func TestSelfExpressChannel_ActionsAndPayloads(t *testing.T) {
 		calls = append(calls, oneCall{path: r.URL.Path, body: body})
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("{\"status\":\"ok\",\"retcode\":0,\"data\":{\"message_id\":12345}}"))
+		// 桥接端的说说回的是 {"tid": "..."} (2026-10-16 实测), 不是 message_id。
+		_, _ = w.Write([]byte("{\"status\":\"ok\",\"retcode\":0,\"data\":{\"tid\":\"t-123\"}}"))
 	}))
 	defer srv.Close()
 	c := NewOneBotClient(srv.URL, "")
@@ -149,8 +150,8 @@ func TestSelfExpressChannel_ActionsAndPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msgID != "12345" {
-		t.Fatalf("说说应当带回 msg id, 实为 %q", msgID)
+	if msgID != "t-123" {
+		t.Fatalf("说说应当带回桥接端的 tid, 实为 %q", msgID)
 	}
 	if err := c.DeleteQzone(msgID); err != nil {
 		t.Fatal(err)
@@ -170,12 +171,18 @@ func TestSelfExpressChannel_ActionsAndPayloads(t *testing.T) {
 	if b := byPath["/set_qq_avatar"]; b == nil || !strings.HasSuffix(str(b["file"]), "a.jpg") {
 		t.Fatalf("set_qq_avatar body: %+v", b)
 	}
+	// ⚠️ 字段名是**实测**出来的: message / text 桥接端都回「正文不能为空」, content 才行。
 	if b := byPath["/send_qzone_msg"]; b == nil {
 		t.Fatal("send_qzone_msg 没被调用")
-	} else if segs, ok := b["message"].([]interface{}); !ok || len(segs) != 2 {
-		t.Fatalf("说说应当是 文字+图 两段: %+v", b["message"])
+	} else {
+		if s, _ := b["content"].(string); s != "今天天气不错" {
+			t.Fatalf("说说正文要用 content 字段: %+v", b)
+		}
+		if imgs, ok := b["images"].([]interface{}); !ok || len(imgs) != 1 {
+			t.Fatalf("配图应当在 images 里: %+v", b["images"])
+		}
 	}
-	if b := byPath["/delete_qzone_msg"]; b == nil || str(b["message_id"]) != "12345" {
+	if b := byPath["/delete_qzone_msg"]; b == nil || str(b["message_id"]) != "t-123" {
 		t.Fatalf("delete_qzone_msg body: %+v", b)
 	}
 }
@@ -346,6 +353,26 @@ func TestSelfKindDue_RespectsCaps(t *testing.T) {
 	}
 	if !e.selfKindDue(SelfKindQzone, cfg) {
 		t.Fatal("说说与头像是两套限频, 不该互相影响")
+	}
+}
+
+// TestSelfKindDue_FailureBacksOff
+//
+// ⚠️ 线上踩过: 一次失败如果下一 tick 就重试 = 每 60 秒撞一次桥接端,
+// 而它对连续失败的动作会熔断 (retcode 1003) —— 重试把一条暂时不通的路彻底堵死。
+func TestSelfKindDue_FailureBacksOff(t *testing.T) {
+	st := newTestStore(t)
+	e := &Engine{Store: st}
+	cfg := SelfExpressConfig{AvatarMinDays: 30}
+	if _, err := st.InsertSelfAction(SelfAction{Kind: SelfKindAvatar, State: SelfStateFailed,
+		Result: "context deadline exceeded"}); err != nil {
+		t.Fatal(err)
+	}
+	if e.selfKindDue(SelfKindAvatar, cfg) {
+		t.Fatal("刚失败过 → 不该马上重试 (会踩桥接端熔断)")
+	}
+	if !e.selfKindDue(SelfKindQzone, cfg) {
+		t.Fatal("另一类不受这次失败影响")
 	}
 }
 
