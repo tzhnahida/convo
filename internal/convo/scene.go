@@ -482,6 +482,34 @@ func (s *Store) updateMember(sceneKey, uin, setClause string, arg interface{}) e
 const NewMemberWindow = 24 * time.Hour
 
 func (s *Store) IsNewMember(sceneKey, uin string, now time.Time, window time.Duration) (bool, error) {
+	// ⚠️⚠️ **先问一个更前面的问题: 这个场景本身是不是刚建立?**
+	//
+	// `first_seen_ts` 是**它自己第一次见到这个人**的时刻 ✓ —— 而不是"这个人什么时候
+	// 进群的" ✗。两者在**它刚上线 / 刚换到一个群**时会完全分开:
+	// 那一刻它第一次见到**所有人** ✓, 于是**每个人都落在 24h 窗口内** ✗,
+	// 于是整群沉默一整天 ✗✗。
+	//
+	// 2026-10-16 生产实测: 群里 12:17 之后**四小时一条都没回** ✓,
+	// 而每一个裁决都是同一句「新成员 — 不主动搭话」 ✓ ——
+	// 成员表里 7 个人的 `first_seen_ts` **全都在当天** ✓。
+	//
+	// ⚠️ 而判据不是"缩短窗口"(那是调数 ✓), 是**这个词在这里没有区分力**:
+	// 如果**整个场景**比窗口还年轻, 那"新人"与"老人"的分别根本不存在 ✓ ——
+	// 那不是"来了一群新人", 是"**我们还没认识过任何人**" ✓。
+	//
+	// ⚠️ 而这条修法不是我发明的 —— 它**就是下面那段注释自己写的理由**:
+	//
+	//   「返回 true 就意味着『数据坏了 → 它忽然不说话』,
+	//     而那是最难查的一类现象(没人会想到去怀疑一个时间戳格式)」
+	//
+	// ⇒ 作者把这条理由用在了**时间戳解析失败**上 ✓, 而漏了**同样的一个洞** ✓。
+	// ⇒ 所以这里同样**往"正常说话"倒** ✓。
+	if sceneFirst := s.sceneFirstSeenTS(sceneKey); !sceneFirst.IsZero() {
+		if now.Sub(sceneFirst) <= window {
+			return false, nil
+		}
+	}
+
 	var first string
 	err := s.DB.QueryRow(`SELECT COALESCE(first_seen_ts,'') FROM convo_scene_member
 		WHERE scene_key=? AND uin=?`, sceneKey, uin).Scan(&first)

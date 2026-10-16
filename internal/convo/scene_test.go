@@ -535,6 +535,14 @@ func TestScene_SetMemberAddress_UnknownMemberErrors(t *testing.T) {
 func TestScene_IsNewMember_ComputedFromFirstSeen(t *testing.T) {
 	s := sceneTestStore(t)
 	sceneTestSeedScene(t, s, sceneTestGroupA, SceneKindGroup)
+	// ⚠️ **场景必须拨到过去** —— "新人"这个词只在"早就认识的群"里有意义 ✓:
+	// `first_seen_ts` 是**它自己第一次见到这个人**的时刻 ✓,
+	// 所以刚建立的场景里所有人都是"今天第一次见" ✗ (那会让整群沉默 24h ✓,
+	// 2026-10-16 生产上真的发生了 4 小时 —— 见 `newmember_test.go` 那三条)。
+	past := time.Now().Add(-30 * 24 * time.Hour).Format(sceneTSLayout)
+	if _, err := s.DB.Exec("UPDATE convo_scene SET first_seen_ts=? WHERE scene_key=?", past, sceneTestGroupA); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.ObserveMember(sceneTestGroupA, sceneTestUserA, "小明", ""); err != nil {
 		t.Fatal(err)
 	}
