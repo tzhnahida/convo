@@ -548,7 +548,25 @@ func TestSelfExpressTick_AutoNicknameOnceThenNotAgain(t *testing.T) {
 	}
 }
 
-// ——— ⑨ 总开关关着 = 一个动作都不发生 ———
+// TestOnTick_SelfExpressionRunsEvenWhenTheSchedulerSaysNothing
+//
+// ⚠️ 这条是**线上盯出来的**: selfExpressTick 原先挂在 OnTick 里那句
+// `action.Kind == ActNone → return nil` 之后, 而绝大多数 tick 都是 ActNone,
+// 于是"它自己换头像/改名"几乎永远不会发生 —— 单元测试全绿, 日志里 0 条。
+func TestOnTick_SelfExpressionRunsEvenWhenTheSchedulerSaysNothing(t *testing.T) {
+	cfg := SelfExpressConfig{Enabled: true, Nickname: "auto", Card: "auto", Avatar: "off", Qzone: "off"}
+	e, _, fs, srv := newSelfExpressEngine(t, cfg, fakeScorer{}, fakeJudger{})
+	defer srv.Close()
+	if err := e.OnTick(context.Background(), TickAction{Kind: ActNone}); err != nil {
+		t.Fatal(err)
+	}
+	if fs.gotProfile() != "小夜" {
+		t.Fatal("ActNone 的那一轮也必须跑自我表达 (昵称没改)")
+	}
+	if fs.gotCard() != "小夜" {
+		t.Fatal("ActNone 的那一轮也必须改群名片 (它与「要不要说话」无关)")
+	}
+}
 
 func TestSelfExpressTick_DisabledMeansNothingHappens(t *testing.T) {
 	cfg := SelfExpressConfig{Enabled: false, Avatar: "auto", Card: "auto"}
