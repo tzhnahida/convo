@@ -1128,27 +1128,10 @@ func threadWithinWindow(m SceneMsg, cfg GroupConfig) bool {
 
 // ——— §6.10.3 多主体发言流 ———
 
-// SceneHistoryLine 多主体发言流的一行: 昵称(uin 后四位): 内容。
+// ⚠️ 这里原来有一个 `SceneHistoryLine`(拼「名字(尾号): 文本」) —— **已删**。
 //
-// uin 后缀是**承重的** (§6.10.3): 群里两个人可以叫同一个名字,
-// 只按昵称渲染会让模型分不清谁是谁 —— 而身份锚是 uin, 昵称只是显示。
-// 这也正是"history 不能是 你:/她: 二元"那条约束的机械内核 (R9/R10)。
-func SceneHistoryLine(displayName, uin, text string) string {
-	name := strings.TrimSpace(displayName)
-	if name == "" {
-		name = "某人" // 没名字也不退化成二元: uin 后缀仍然把人分开
-	}
-	// ⚠️ **uin 为空时不许拼出 `某人(????)`** —— `UinTail("")` 返回的就是 `????`,
-	// 而"有个人说的"与"uin 是问号"是两件事。没有尾号就不带括号,
-	// 那仍然比丢掉发言人标识强。
-	//
-	// ⚠️ 这条路是**纵深防御**: 主调用点(`recentDialogIn`)已经在空 uin 时走了
-	// 更早的回退(它要的是"群友"这个词)。但下一个调用方未必知道这件事。
-	if strings.TrimSpace(uin) == "" {
-		return name + ": " + text
-	}
-	return fmt.Sprintf("%s(%s): %s", name, UinTail(uin), text)
-}
+// ⚠️ 2026-10-16 行首格式换成了群主定的「**序号 编号: 原话**」
+// (对照表在表头只印一次 ✓), 它就没人调了 ✗。
 
 // UinTail uin 后四位 (不足四位原样; 空 → "????")。够区分人, 又不必把完整号写进提示词。
 func UinTail(uin string) string {

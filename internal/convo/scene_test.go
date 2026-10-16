@@ -783,38 +783,6 @@ func TestScene_WhitelistEmptyMeansNone(t *testing.T) {
 
 // ——— 契约 17: 多主体发言流按 uin 区分 (R9 / R10 的注入侧) ———
 
-func TestScene_HistoryLine_MultiParty(t *testing.T) {
-	// 三个人里有两个同名 —— 只按昵称渲染就分不出谁是谁。
-	l1 := SceneHistoryLine("小明", "10001", "在吗")
-	l2 := SceneHistoryLine("小明", "20002", "在")
-	l3 := SceneHistoryLine("小红", "30003", "嗯")
-	speaker := func(s string) string {
-		if i := strings.Index(s, ": "); i >= 0 {
-			return s[:i]
-		}
-		return s
-	}
-	got := []string{speaker(l1), speaker(l2), speaker(l3)}
-	if got[0] == got[1] {
-		t.Fatalf("两个同名的发言人渲染成了同一个说话人: %q", got[0])
-	}
-	// 🔴 反面 (R9): 改回 `你:/她:` 二元 (或去掉 uin 后缀只留昵称) → 上面两个前缀相同 → 红。
-	// 注入里只出现 uin 的**后四位** (够区分人, 又不必把完整号写进提示词)。
-	if !strings.Contains(l1, "(0001)") {
-		t.Fatalf("注入行里没有身份锚的 uin 后缀: %q", l1)
-	}
-	if l1 != "小明(0001): 在吗" {
-		t.Fatalf("行格式应稳定为 昵称(uin 后四位): 内容, 实得 %q", l1)
-	}
-	if l3 != "小红(0003): 嗯" {
-		t.Fatalf("行格式应稳定为 昵称(uin 后四位): 内容, 实得 %q", l3)
-	}
-	// 空名字也不许退化成二元。
-	if !strings.Contains(SceneHistoryLine("", "40004", "喂"), "(0004)") {
-		t.Fatal("没有昵称时仍必须靠 uin 后缀区分人")
-	}
-}
-
 // ——— 契约 18: 问题③ 我以什么身份回 ———
 
 func TestScene_EffectiveSelfRole(t *testing.T) {

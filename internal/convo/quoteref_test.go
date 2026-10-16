@@ -23,8 +23,8 @@ func TestReplyRef_AttachesTheQuotedOriginal(t *testing.T) {
 			Payload: "早点睡", TS: "2026-10-16 22:41:03"},
 	}
 	m := MessageRecord{Dir: "user", SenderUIN: "2735604537", Payload: "那就睡", ReplyTo: "9001"}
-	got := ReplyRefSuffix(m, quoted, map[string]string{"351390754": "傲娇老缇"})
-	for _, want := range []string{"(回11)", "早点睡", "傲娇老缇", "22:41"} {
+	got := ReplyRefSuffix("群1", m, quoted, map[string]string{"351390754": "傲娇老缇"})
+	for _, want := range []string{"(回群1-11)", "早点睡", "傲娇老缇", "22:41"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("引用后缀 %q 里缺 %q —— 那「那就睡」还是没有指代对象", got, want)
 		}
@@ -36,11 +36,11 @@ func TestReplyRef_AttachesTheQuotedOriginal(t *testing.T) {
 // ⚠️ 引用的那条查不到 ⇒ **什么都不加** ✓, 而不是编一句"往上找" ✗。
 func TestReplyRef_MissingTargetAddsNothing(t *testing.T) {
 	plain := MessageRecord{Dir: "user", SenderUIN: "1", Payload: "在吗"}
-	if got := ReplyRefSuffix(plain, nil, nil); got != "" {
+	if got := ReplyRefSuffix("群1", plain, nil, nil); got != "" {
 		t.Fatalf("不是引用回复却加了后缀: %q", got)
 	}
 	dangling := MessageRecord{Dir: "user", SenderUIN: "1", Payload: "为什么", ReplyTo: "404"}
-	if got := ReplyRefSuffix(dangling, map[string]MessageRecord{}, nil); got != "" {
+	if got := ReplyRefSuffix("群1", dangling, map[string]MessageRecord{}, nil); got != "" {
 		t.Fatalf("**引用的那条找不到却编了一句**: %q", got)
 	}
 }

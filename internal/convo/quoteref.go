@@ -19,7 +19,7 @@ import (
 // ⚠️ 被引用的那条**可能在窗口之外** ✗ ⇒ `quoted` 里必须有它 ✓
 // (调用方负责回查并填进来 ✓, 见 `LoadQuotedByMsgIDs`)。
 // ⚠️ 查不到就**什么都不加** ✓ —— 宁可不附, 也不编一句"往上找" ✗。
-func ReplyRefSuffix(m MessageRecord, quoted map[string]MessageRecord, nameByUIN map[string]string) string {
+func ReplyRefSuffix(groupTag string, m MessageRecord, quoted map[string]MessageRecord, nameByUIN map[string]string) string {
 	id := strings.TrimSpace(m.ReplyTo)
 	if id == "" {
 		return "" // 不是引用回复
@@ -56,7 +56,13 @@ func ReplyRefSuffix(m MessageRecord, quoted map[string]MessageRecord, nameByUIN 
 	if q.DaySeq > 0 {
 		seq = strconv.Itoa(q.DaySeq)
 	}
-	return " (回" + seq + "){" + who + " " + txt + hm + "}"
+	// ⚠️ 群号也带进引用 ✓ —— 群主 2026-10-16 定的「**群也要带编号**」:
+	// 多群之下"第 11 条"会撞车 ✗ ⇒ 指认必须 `群1-11` 这样两段都给 ✓。
+	ref := "回" + seq
+	if groupTag != "" {
+		ref = "回" + groupTag + "-" + seq
+	}
+	return " (" + ref + "){" + who + " " + txt + hm + "}"
 }
 
 // LoadQuotedByMsgIDs 按平台 id 批量回查被引用的消息 ✓。

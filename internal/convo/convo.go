@@ -449,6 +449,34 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 	//
 	// ⚠️ 窗口内的一次遍历建索引 ✓, 窗口外的**一次批量回查** ✓ ——
 	// 不在循环里逐条查 (那是 N 次 IO ✓, 与取名字同一条规矩 ✓)。
+	// §6.10.2 ③ **三套编号** (群主 2026-10-16 定):
+	//
+	//	`群1` = 这个场景 ✓ · `1`/`2` = 发言人 ✓ · `11`/`12` = 当天该场景内的消息序号 ✓。
+	//
+	// ⚠️ **群也要带编号** ✓ —— 多群之下"第 11 条"会撞车 ✗,
+	// 所以引用写 `(回群1-11)` 两段都给 ✓。
+	// ⚠️ 而**对照表只在表头印一次** ✓ —— 那是省 token 的那一半 ✓。
+	groupTag := "群1"
+	isGroup := SceneKindOf(sceneKey) == SceneKindGroup
+	handle := map[string]int{}
+	uinByHandle := map[int]string{}
+	nextHandle := 1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		m := msgs[i]
+		if m.Dir == "ai" {
+			continue // 它自己是"我" ✓, 不占编号
+		}
+		u := strings.TrimSpace(m.SenderUIN)
+		if u == "" {
+			continue
+		}
+		if _, ok := handle[u]; !ok {
+			handle[u] = nextHandle
+			uinByHandle[nextHandle] = u
+			nextHandle++
+		}
+	}
+
 	quoted := make(map[string]MessageRecord, len(msgs))
 	for _, m := range msgs {
 		if id := strings.TrimSpace(m.MsgID); id != "" {
@@ -496,7 +524,14 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 			line = string([]rune(line)[:300]) + "…"
 		}
 		// 引用后缀 ✓ —— 纯追加, 不改行首那套格式 ✓ (那套有 21 处用例钉着)。
-		sfx := ReplyRefSuffix(m, quoted, nameByUIN)
+		// §6.10.2 ③ **行首格式** (群主 2026-10-16 定):
+		//
+		//	`<当日序号> <发言人编号>: 原话` + 引用后缀
+		//
+		// ⚠️ 群号与发言人编号的**对照表在表头印一次** ✓ ——
+		// 原来「群聊(id) 名字(uin)」每行重复 ✗, 30 行就是 30 遍 ✗。
+		// 而那正是群主要求省的那笔 token ✓。
+		sfx := ReplyRefSuffix(groupTag, m, quoted, nameByUIN)
 		// ——— §6.10.3 **多主体发言流** ———
 		//
 		// 私聊只有一个主体 → 保持「你:/她:」二元 (加 uin 是噪声, 而且**会改动每一轮的
@@ -514,31 +549,48 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 			// 那既难看又**丢了信息**: "有个人说的"和"uin 是问号"是两件事。
 			// (这个 bug 是变异测试的输出意外暴露的 —— 我本来只在测私聊格式。)
 			if m.Dir == "ai" {
-				out = append(out, "她: "+line+sfx) // 它自己在群里也是"她", 不必再标 uin
+				out = append(out, fmt.Sprintf("%d 我: %s%s", m.DaySeq, line, sfx)) // 它自己是"我" ✓ (群主定的编号里不占号)
 				continue
 			}
 			// ⚠️ **空 uin 走更早的回退, 不许进 SceneHistoryLine** ——
 			// `UinTail("")` 返回的就是 `????`, 而"有个人说的"和"uin 是问号"是两件事。
 			// 这一条有专门用例钉着(它当初是**变异测试**意外暴露的)。
 			if strings.TrimSpace(m.SenderUIN) == "" {
-				out = append(out, "群友: "+line+sfx)
+				out = append(out, fmt.Sprintf("%d 群友: %s%s", m.DaySeq, line, sfx))
 				continue
 			}
 			// ⚠️ §6.10.3 要的格式是 **`昵称(uin 后四位): 内容`**, 不是"群友+尾号"。
 			// 昵称让人读得顺, 尾号保证**两个人同名也分得开**。
-			out = append(out, SceneHistoryLine(nameByUIN[m.SenderUIN], m.SenderUIN, line)+sfx)
+			out = append(out, fmt.Sprintf("%d %d: %s%s", m.DaySeq, handle[m.SenderUIN], line, sfx))
 			continue
 		}
 		who := "你"
 		if m.Dir == "ai" {
 			who = "她"
 		}
-		out = append(out, who+": "+line+sfx)
+		out = append(out, fmt.Sprintf("%d %s: %s%s", m.DaySeq, who, line, sfx))
 	}
 	// 同一张图的第 1 次留完整内容, 第 2 次起换成「内容往上找」(短标对得上)。
 	out = CollapseRepeatedImageMarks(out)
 	if len(out) == 0 {
 		return ""
+	}
+	// §6.10.2 ③ **表头图例** ✓ —— 三套编号的对照表, 只印一次 ✓。
+	//
+	// ⚠️ 群主要求省的就是这笔: 原来每行都带「群聊(id) 名字(uin)」✗,
+	// 而现在对照表在表头 ✓、每行只有「序号 编号: 原话」✓。
+	if isGroup && len(uinByHandle) > 0 {
+		parts := make([]string, 0, len(uinByHandle)+1)
+		for n := 1; n < nextHandle; n++ {
+			u := uinByHandle[n]
+			nm := strings.TrimSpace(nameByUIN[u])
+			if nm == "" {
+				nm = "群友"
+			}
+			parts = append(parts, fmt.Sprintf("%d=%s(%s)", n, nm, UinTail(u)))
+		}
+		parts = append(parts, "我=它自己")
+		out = append([]string{"【" + groupTag + "=" + sceneKey + "】" + strings.Join(parts, " ")}, out...)
 	}
 	return strings.Join(out, "\n") + "\n"
 }
