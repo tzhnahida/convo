@@ -638,7 +638,8 @@ func (s *Store) insertMessage(dir, channel, kind, payload, origin, sceneKey, sen
 
 func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 	rows, err := s.DB.Query(`SELECT id, ts, dir, channel, kind, payload_json,
-			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,'')
+			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,''),
+			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,'')
 		FROM convo_messages WHERE COALESCE(origin,'') <> ? ORDER BY id DESC LIMIT ?`, OriginAIToAI, limit)
 	if err != nil {
 		return nil, err
@@ -649,7 +650,8 @@ func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 		var m MessageRecord
 		var atRaw string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Dir, &m.Channel, &m.Kind, &m.Payload,
-			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw); err != nil {
+			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw,
+			&m.MsgID, &m.DaySeq, &m.ReplyTo); err != nil {
 			return nil, err
 		}
 		m.AtUINs = SplitAtUINs(atRaw)
@@ -665,7 +667,8 @@ func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 // 而且是**静默**的: 表现只是"它怎么知道那件事"。
 func (s *Store) RecentMessagesIn(sceneKey string, limit int) ([]MessageRecord, error) {
 	rows, err := s.DB.Query(`SELECT id, ts, dir, channel, kind, payload_json,
-			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,'')
+			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,''),
+			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,'')
 		FROM convo_messages
 		WHERE COALESCE(origin,'') <> ? AND COALESCE(scene_key,'') = ?
 		ORDER BY id DESC LIMIT ?`, OriginAIToAI, sceneKey, limit)
@@ -678,7 +681,8 @@ func (s *Store) RecentMessagesIn(sceneKey string, limit int) ([]MessageRecord, e
 		var m MessageRecord
 		var atRaw string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Dir, &m.Channel, &m.Kind, &m.Payload,
-			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw); err != nil {
+			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw,
+			&m.MsgID, &m.DaySeq, &m.ReplyTo); err != nil {
 			return nil, err
 		}
 		m.AtUINs = SplitAtUINs(atRaw)

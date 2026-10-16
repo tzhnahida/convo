@@ -445,6 +445,30 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 	// 重复图片的「引用式」标记必须在**这一刻**决定 —— 只有这时才知道
 	// 那份完整内容还在不在窗口里。入库时决定过一次, 结果是线上出现
 	// 两条互相指向的「往上找」, 指针悬空 (详见 imgcollapse.go)。
+	// §6.10.2 ③ **引用回复**: 把"被引用的那条"找出来 ✓。
+	//
+	// ⚠️ 窗口内的一次遍历建索引 ✓, 窗口外的**一次批量回查** ✓ ——
+	// 不在循环里逐条查 (那是 N 次 IO ✓, 与取名字同一条规矩 ✓)。
+	quoted := make(map[string]MessageRecord, len(msgs))
+	for _, m := range msgs {
+		if id := strings.TrimSpace(m.MsgID); id != "" {
+			quoted[id] = m
+		}
+	}
+	var missing []string
+	for _, m := range msgs {
+		if id := strings.TrimSpace(m.ReplyTo); id != "" {
+			if _, ok := quoted[id]; !ok {
+				missing = append(missing, id)
+			}
+		}
+	}
+	if extra, qerr := e.Store.LoadQuotedByMsgIDs(missing); qerr == nil {
+		for k, v := range extra {
+			quoted[k] = v
+		}
+	}
+
 	var out []string
 	for i := len(msgs) - 1; i >= 0; i-- {
 		m := msgs[i]
@@ -471,6 +495,8 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 		if len([]rune(line)) > 300 {
 			line = string([]rune(line)[:300]) + "…"
 		}
+		// 引用后缀 ✓ —— 纯追加, 不改行首那套格式 ✓ (那套有 21 处用例钉着)。
+		sfx := ReplyRefSuffix(m, quoted, nameByUIN)
 		// ——— §6.10.3 **多主体发言流** ———
 		//
 		// 私聊只有一个主体 → 保持「你:/她:」二元 (加 uin 是噪声, 而且**会改动每一轮的
@@ -488,26 +514,26 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 			// 那既难看又**丢了信息**: "有个人说的"和"uin 是问号"是两件事。
 			// (这个 bug 是变异测试的输出意外暴露的 —— 我本来只在测私聊格式。)
 			if m.Dir == "ai" {
-				out = append(out, "她: "+line) // 它自己在群里也是"她", 不必再标 uin
+				out = append(out, "她: "+line+sfx) // 它自己在群里也是"她", 不必再标 uin
 				continue
 			}
 			// ⚠️ **空 uin 走更早的回退, 不许进 SceneHistoryLine** ——
 			// `UinTail("")` 返回的就是 `????`, 而"有个人说的"和"uin 是问号"是两件事。
 			// 这一条有专门用例钉着(它当初是**变异测试**意外暴露的)。
 			if strings.TrimSpace(m.SenderUIN) == "" {
-				out = append(out, "群友: "+line)
+				out = append(out, "群友: "+line+sfx)
 				continue
 			}
 			// ⚠️ §6.10.3 要的格式是 **`昵称(uin 后四位): 内容`**, 不是"群友+尾号"。
 			// 昵称让人读得顺, 尾号保证**两个人同名也分得开**。
-			out = append(out, SceneHistoryLine(nameByUIN[m.SenderUIN], m.SenderUIN, line))
+			out = append(out, SceneHistoryLine(nameByUIN[m.SenderUIN], m.SenderUIN, line)+sfx)
 			continue
 		}
 		who := "你"
 		if m.Dir == "ai" {
 			who = "她"
 		}
-		out = append(out, who+": "+line)
+		out = append(out, who+": "+line+sfx)
 	}
 	// 同一张图的第 1 次留完整内容, 第 2 次起换成「内容往上找」(短标对得上)。
 	out = CollapseRepeatedImageMarks(out)
