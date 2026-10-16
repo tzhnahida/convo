@@ -46,7 +46,7 @@ func groupSpeakEngine(t *testing.T, c Chatter) (*Engine, *groupCapSender) {
 	if err := os.WriteFile(gif, []byte("GIF89a"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.InsertSticker("https://fake/x.gif", gif, "ja", "builtin", 0.5); err != nil {
+	if _, err := s.InsertSticker("https://fake/x.gif", gif, "ja", "builtin", 0.5, ""); err != nil {
 		t.Fatal(err)
 	}
 	e := &Engine{Store: s, Cfg: DefaultConfig(), Dialog: &DialogEngine{Store: s},

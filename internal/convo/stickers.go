@@ -108,10 +108,16 @@ func (s *Store) SetAffinity(id int64, v float64) error {
 }
 
 // InsertSticker 新候选入库 (打分直入喜欢位 — §8.7 步骤 4: affinity=打分)。
-func (s *Store) InsertSticker(srcURL, localPath, lang, source string, score float64) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO stickers(src_url, local_path, lang, affinity, score, source, born_ts)
-		VALUES(?,?,?, ?, ?, ?, ?)`,
-		srcURL, localPath, lang, score, score, source, clock.TodayTS())
+//
+// ⚠️ 它**自己不去重** —— 去重在调用方: 先 StickerBySrcURL 问地址, 下完再
+// StickerByDigest 问内容。为什么不在这一层做: 这里拿不到「刚下的那份文件要不要删」,
+// 而那正是重复文件堆积的入口 (2026-10-16 的 473 行事故)。
+//
+// digest = 图片内容 md5 (空 = 不知道, 那样这一行永远不参与内容去重)。
+func (s *Store) InsertSticker(srcURL, localPath, lang, source string, score float64, digest string) (int64, error) {
+	res, err := s.DB.Exec(`INSERT INTO stickers(src_url, local_path, lang, affinity, score, source, born_ts, digest)
+		VALUES(?,?,?, ?, ?, ?, ?, ?)`,
+		srcURL, localPath, lang, score, score, source, clock.TodayTS(), strings.ToLower(strings.TrimSpace(digest)))
 	if err != nil {
 		return 0, err
 	}

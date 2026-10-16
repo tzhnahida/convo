@@ -82,7 +82,9 @@ func (e *Engine) AdoptSticker(ctx context.Context, imgPath, md5, note string, se
 	if err := copyFile(imgPath, dst); err != nil {
 		return "", false, err
 	}
-	id, err := e.Store.InsertSticker(src, dst, e.Cfg.Stickers.Lang, "adopted", aff)
+	// 指纹就用桥接方给的 md5 (它与 src 同源, 已经证明是同一张图)。
+	id, err := e.Store.InsertSticker(src, dst, e.Cfg.Stickers.Lang, "adopted", aff,
+		strings.ToLower(strings.TrimSpace(md5)))
 	if err != nil {
 		return "", false, err
 	}

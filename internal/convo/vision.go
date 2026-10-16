@@ -132,10 +132,26 @@ func (c *StickerCycle) Run(ctx context.Context, store *Store) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// ⚠️ 先问 URL: 这个地址收过就不用再下一次 (2026-10-16 事故的第一道缝)。
+		if id, ok, _ := store.StickerBySrcURL(c.Cfg.Lang, r.URL); ok {
+			log.Debug("convo:sticker", "URL 已在池里 (id=%d), 跳过下载 %s", id, r.URL)
+			continue
+		}
 		path, err := dl(ctx, hc, r.URL, dir, c.Cfg.Lang)
 		if err != nil {
 			log.Debug("convo:sticker", "download skip %s: %v", r.URL, err)
 			continue // 404 兜底: 换下一张 (§8.7 风险)
+		}
+		// ⚠️ 再问内容: 换个 URL 端来同一张图, 池里也只该有一行。
+		// 文件名带纳秒 → 每轮都是新名字, 光靠文件名/URL 挡不住 (那 47 遍就是这么来的)。
+		digest, derr := FileDigest(path)
+		if derr != nil {
+			log.Debug("convo:sticker", "指纹算不出 %s: %v (此行不参与内容去重)", path, derr)
+			digest = ""
+		} else if id, ok, _ := store.StickerByDigest(c.Cfg.Lang, digest); ok {
+			_ = osRemove(path) // 刚下的这份是重复的 —— 连文件一起退掉
+			log.Debug("convo:sticker", "同一张图已在池里 (id=%d), 跳过 %s", id, r.URL)
+			continue
 		}
 		var score float64
 		var note string
@@ -156,7 +172,7 @@ func (c *StickerCycle) Run(ctx context.Context, store *Store) error {
 		if score < c.Cfg.ScoreMin {
 			continue
 		}
-		id, err := store.InsertSticker(r.URL, path, c.Cfg.Lang, r.From, score)
+		id, err := store.InsertSticker(r.URL, path, c.Cfg.Lang, r.From, score, digest)
 		if err != nil {
 			log.Warn("convo:sticker", "insert: %v", err)
 			continue
@@ -206,7 +222,14 @@ func (c *StickerCycle) seedBuiltin(store *Store) error {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		if _, err := store.InsertSticker("builtin://"+e.Name(), path, c.Cfg.Lang, "builtin", 0.5); err == nil {
+		// 内置包也要幂等: 每次启动都会扫这个目录 (2026-10-16 之前是每次都重新入库一遍)。
+		digest, _ := FileDigest(path)
+		if digest != "" {
+			if _, ok, _ := store.StickerByDigest(c.Cfg.Lang, digest); ok {
+				continue
+			}
+		}
+		if _, err := store.InsertSticker("builtin://"+e.Name(), path, c.Cfg.Lang, "builtin", 0.5, digest); err == nil {
 			added++
 		}
 	}

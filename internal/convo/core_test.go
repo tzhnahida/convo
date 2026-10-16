@@ -41,15 +41,15 @@ func TestStickerLifecycle(t *testing.T) {
 	}
 	defer store.Close()
 
-	id, err := store.InsertSticker("http://x/1.gif", dir+"/1.gif", "ja", "tenor", 0.8)
+	id, err := store.InsertSticker("http://x/1.gif", dir+"/1.gif", "ja", "tenor", 0.8, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id2, err := store.InsertSticker("http://x/2.png", dir+"/2.png", "ja", "firecrawl", 0.6)
+	id2, err := store.InsertSticker("http://x/2.png", dir+"/2.png", "ja", "firecrawl", 0.6, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id3, _ := store.InsertSticker("http://x/3.png", dir+"/3.png", "ja", "tenor", 0.2)
+	id3, _ := store.InsertSticker("http://x/3.png", dir+"/3.png", "ja", "tenor", 0.2, "")
 
 	if !store.StickerExists(id) {
 		t.Fatal("sticker should exist")
@@ -76,9 +76,9 @@ func TestWeightedPick_cap(t *testing.T) {
 	defer store.Close()
 	// 高 affinity 单张概率被 cap ≤30% 封顶 (30 张中高票数一张)
 	for i := 0; i < 30; i++ {
-		_, _ = store.InsertSticker("u", "p", "ja", "t", 0.5)
+		_, _ = store.InsertSticker("u", "p", "ja", "t", 0.5, "")
 	}
-	top, _ := store.InsertSticker("u", "p", "ja", "t", 1.0)
+	top, _ := store.InsertSticker("u", "p", "ja", "t", 1.0, "")
 	count := 0
 	for i := 0; i < 1000; i++ {
 		st, err := store.WeightedPick(0.30)
@@ -114,7 +114,7 @@ func TestValidateFrame(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := OpenStore(dir, "test.db")
 	defer store.Close()
-	stID, _ := store.InsertSticker("u", "p", "ja", "t", 0.5)
+	stID, _ := store.InsertSticker("u", "p", "ja", "t", 0.5, "")
 	d := &DialogEngine{Store: store, StickerExists: store.StickerExists}
 	in := DialogInput{
 		Memories: []Memory{{MemID: "mem_ok", V: "喜欢猫"}},

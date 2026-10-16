@@ -139,7 +139,9 @@ func main() {
 			panic(err)
 		}
 		f.Close()
-		id, err := store.InsertSticker("demo://"+s.name, p, "ja", "demo", s.affinity)
+		// 真指纹: 文件刚写出来, 内容可读 —— 只存真内容指纹, 假指纹会让收拢时张冠李戴。
+		dig, _ := convo.FileDigest(p)
+		id, err := store.InsertSticker("demo://"+s.name, p, "ja", "demo", s.affinity, dig)
 		if err != nil {
 			panic(fmt.Sprintf("sticker: %v", err))
 		}

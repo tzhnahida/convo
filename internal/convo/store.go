@@ -143,7 +143,8 @@ CREATE TABLE IF NOT EXISTS stickers (
 	src_url TEXT, local_path TEXT, lang TEXT,
 	affinity REAL DEFAULT 0.5, use_count INTEGER DEFAULT 0, score REAL,
 	tags TEXT, source TEXT, born_ts TEXT, retired_ts TEXT,
-	note TEXT DEFAULT ''
+	note TEXT DEFAULT '',
+	digest TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS convo_counters (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,6 +213,30 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	var hasNote int
 	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('stickers') WHERE name='note'`).Scan(&hasNote); err == nil && hasNote == 0 {
 		_, _ = s.DB.Exec(`ALTER TABLE stickers ADD COLUMN note TEXT DEFAULT ''`)
+	}
+	// v2.5: stickers.digest (内容指纹) —— 池的身份是**内容**, 不是文件名。
+	// ⚠️ 补列只解决「能写」; 已有重复行的收拢靠一次性 `convo -dedupe-stickers=run`。
+	// 背景: 2026-10-16 owner 发现 473 张卡片长得一模一样, 查库只有 21 张不同的图。
+	var hasDigest int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('stickers') WHERE name='digest'`).Scan(&hasDigest); err == nil && hasDigest == 0 {
+		_, _ = s.DB.Exec(`ALTER TABLE stickers ADD COLUMN digest TEXT DEFAULT ''`)
+	}
+	// 入库前那两次查问 (URL / 内容) 要靠索引, 否则每轮爬虫全表扫。
+	//
+	// ⚠️ 只在列真的都在时才建 —— 迁移用例里那个「老库」夹具是 stickers(id, note),
+	// 少列时建索引会当场报错 → OpenStore 整个失败 → 真正该验的那 8 个 memory 列
+	// 反而永远验不到 (这个坑 2026-10-16 踩过一次: TestMigrate_MemoryColumns... 红了)。
+	var haveStickerCols int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('stickers')
+		WHERE name IN ('lang', 'src_url', 'digest')`).Scan(&haveStickerCols); err == nil && haveStickerCols >= 3 {
+		for _, ix := range []string{
+			`CREATE INDEX IF NOT EXISTS ix_stickers_digest ON stickers(lang, digest)`,
+			`CREATE INDEX IF NOT EXISTS ix_stickers_srcurl ON stickers(lang, src_url)`,
+		} {
+			if _, err := s.DB.Exec(ix); err != nil {
+				return err
+			}
+		}
 	}
 	// ⚠️ **这 8 列不许再挂回上面那个 if 里面。**
 	//

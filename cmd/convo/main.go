@@ -38,6 +38,9 @@ func parseQQ(s string) int64 {
 func main() {
 	cfgPath := flag.String("config", "configs/convo.yaml", "convo config file")
 	adminDir := flag.String("admin-dir", "", "serve admin UI from this directory (dev, hot reload)")
+	// 一次性运维: 收拢表情包池里的重复。dry|run, 默认关。
+	// ⚠️ run 是**破坏性**的 (删行 + 删重复文件) —— 所以必须显式点名, 不许顺手跑。
+	dedupeStickers := flag.String("dedupe-stickers", "", "one-shot: collapse duplicate stickers by content (dry|run; default off)")
 	flag.Parse()
 
 	cfg, err := convo.Load(*cfgPath)
@@ -52,6 +55,24 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+
+	// 表情包池一次性收拢 (2026-10-16 owner 报「表情包都是一模一样的」)。
+	// 起因: 爬虫每轮重下同一批 URL + InsertSticker 裸 INSERT → 473 行其实只有 21 张图。
+	if *dedupeStickers != "" {
+		dry := *dedupeStickers != "run"
+		rep, err := store.DedupeStickers(dry)
+		if err != nil {
+			log.Error("convo", "表情包池去重失败: %v", err)
+			os.Exit(1)
+		}
+		mode := "预演 (什么都没改)"
+		if !dry {
+			mode = "已执行"
+		}
+		log.Info("convo:sticker", "池去重 %s: %d 行 → %d 行 (合并 %d 行, 删重复文件 %d 个, 无文件 %d 行, 剩 %d 张不同的图)",
+			mode, rep.RowsBefore, rep.RowsAfter, rep.Dropped, rep.FilesGone, rep.NoFile, rep.Groups)
+		return
+	}
 
 	token, err := convo.LoadOrCreateToken(cfg.DataDir, cfg.Token)
 	if err != nil {

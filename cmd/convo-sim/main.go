@@ -553,7 +553,8 @@ func main() {
 	// 3 张初始表情包
 	stIDs := []int64{}
 	for i := 0; i < 3; i++ {
-		id, _ := store.InsertSticker("https://fake/builtin.gif", filepath.Join(dir, fmt.Sprintf("s%d.gif", i)), "ja", "builtin", 0.5+float64(i)*0.15)
+		// 仿真里的文件是假的 (没有内容) → 指纹传空: 宁可不参与去重, 也不存假指纹。
+		id, _ := store.InsertSticker("https://fake/builtin.gif", filepath.Join(dir, fmt.Sprintf("s%d.gif", i)), "ja", "builtin", 0.5+float64(i)*0.15, "")
 		stIDs = append(stIDs, id)
 	}
 
