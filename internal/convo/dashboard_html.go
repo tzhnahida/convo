@@ -175,6 +175,64 @@ select option{background:#1e1b4b;color:#fff}
 .toast.bad{background-image:linear-gradient(90deg,#e11d48,#f97316);box-shadow:0 20px 50px -18px rgba(249,115,22,1)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}}
 @media (max-width:700px){.grid{grid-template-columns:1fr}main,.top{padding-left:13px;padding-right:13px}.brand p{display:none}}
+/* ——— 图表 · 卡片动效 · 骨架屏 (2026-10-16) ———
+   ⚠️ 全部手写: 零外部请求是硬约束 —— 观测手段不该有断网风险。
+   ⚠️ 每一个动效都必须在 prefers-reduced-motion 下关掉, 见本文件末尾那一段。 */
+.ch{width:100%;height:auto;display:block;overflow:visible}
+.ch .gl{stroke:rgba(255,255,255,.09);stroke-width:.35}
+.ch .ln{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:2400;stroke-dashoffset:2400;animation:dash 1.5s cubic-bezier(.22,.9,.28,1) forwards}
+.ch .ar{stroke:none;opacity:.14;animation:fade .9s .25s ease-out backwards}
+.ch .dt{fill:#e2e8f0;stroke:rgba(2,6,23,.9);stroke-width:.7}
+@keyframes dash{to{stroke-dashoffset:0}}
+@keyframes fade{from{opacity:0}to{opacity:.14}}
+.cbars{display:flex;align-items:flex-end;gap:2px;height:86px;padding:2px 0}
+.cbars i{flex:1 1 0;min-width:3px;border-radius:3px 3px 1px 1px;transform-origin:bottom;
+  background-image:linear-gradient(180deg,#a78bfa,#22d3ee);animation:grow .55s cubic-bezier(.22,.9,.28,1) backwards}
+@keyframes grow{from{transform:scaleY(.02);opacity:.4}}
+.caxis{display:flex;justify-content:space-between;font-size:11px;color:var(--ink4);margin-top:4px}
+.ring{display:flex;align-items:center;gap:16px}
+.ring svg{width:108px;height:108px;flex:none;transform:rotate(-90deg)}
+.ring .rv{stroke-dasharray:264;stroke-dashoffset:264;animation:ring 1.1s cubic-bezier(.22,.9,.28,1) forwards}
+@keyframes ring{to{stroke-dashoffset:var(--to,264)}}
+.ringtx{min-width:0}
+.ringtx b{display:block;font-size:26px;line-height:1.1}
+.ringtx span{font-size:11.5px;color:var(--ink3)}
+.heat{display:grid;gap:3px;margin-top:6px}
+.heat i{aspect-ratio:1/1;border-radius:3px;background:rgba(255,255,255,.05);
+  animation:pop .4s ease-out backwards}
+@keyframes pop{from{transform:scale(.3);opacity:0}}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink3);margin:6px 0 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.tl{list-style:none;margin:4px 0 0;padding:0 0 0 16px;border-left:1px dashed var(--line)}
+.tl li{position:relative;margin:0 0 9px}
+.tl li:before{content:"";position:absolute;left:-21px;top:6px;width:8px;height:8px;border-radius:50%;
+  background-image:linear-gradient(135deg,#a78bfa,#22d3ee);box-shadow:0 0 0 3px rgba(167,139,250,.16)}
+.tl .t{font-size:11.5px;color:var(--ink4);font-variant-numeric:tabular-nums}
+.ring2{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px}
+.card h3.sub{margin:12px 0 4px;font-size:12.5px;font-weight:600;color:var(--ink2)}
+.stat{display:flex;align-items:baseline;gap:8px;margin:0 0 6px}
+.stat b{font-size:22px;line-height:1.15}
+.stat span{font-size:12px;color:var(--ink3)}
+.card{animation:up .5s cubic-bezier(.22,.9,.28,1) backwards}
+.card:nth-child(1){animation-delay:.02s}.card:nth-child(2){animation-delay:.07s}
+.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.17s}
+.card:nth-child(5){animation-delay:.22s}.card:nth-child(6){animation-delay:.27s}
+.card:nth-child(n+7){animation-delay:.32s}
+@keyframes up{from{opacity:0;transform:translateY(10px) scale(.995)}}
+.sk{height:12px;border-radius:6px;margin:6px 0;
+  background-image:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.16),rgba(255,255,255,.05));
+  background-size:200% 100%;animation:shim 1.25s linear infinite}
+@keyframes shim{to{background-position:-200% 0}}
+/* ⚠️ 降级不是可选项: 关掉动画之后页面必须**照样能用** —— 所以上面每一条动效的终态
+   都是"内容可见"的那一侧 (dashoffset 归零 / 高度就是最终高度 / 透明度 1)。 */
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important}
+  .ch .ln{stroke-dashoffset:0}
+  .ch .ar{opacity:.14}
+  .ring .rv{stroke-dashoffset:var(--to,264)}
+}
 </style></head><body>
 <header class="top">
   <div class="toprow">
@@ -223,10 +281,19 @@ var SPEC=[
   ["dayplan","/dayplan"],
   ["world","/world"],
   ["stickers","/stickers"],
-  ["slang","/slang"]
+  ["slang","/slang"],
+  // 2026-10-16: 时序 / 热力流水 / 关系两层 / 内部状态。
+  // ⚠️ 它们原来要么没有出口(heat 早就有端点却没人读), 要么只有一层关系量 ——
+  // 于是"群里火热私聊疏离"在页面上**看不出来**。
+  ["msgs","/series?kind=msgs&days=30"],
+  ["counters","/series?kind=counters&days=30"],
+  ["heatlog","/heat?limit=120"],
+  ["bonds","/bonds"],
+  ["state","/state"]
 ];
 var TABS=[["overview","概览"],["world","世界观"],["persona","人格"],["dialog","对话"],
-  ["memory","记忆"],["learn","学习"],["social","社交"],["sticker","表情包"],["slang","黑话"]];
+  ["memory","记忆"],["learn","学习"],["social","社交"],["sticker","表情包"],["slang","黑话"],
+  ["state","状态"]];
 var DATA={}, ERR={}, TAB="overview", TIMER=null, BUSY=false;
 var UI={tq:"",tlimit:30,toff:0,total:0};
 
@@ -300,6 +367,230 @@ function promptHTML(prompt,segs){
 function relLabel(r){return {companion:"同伴",rival:"对手",family:"家人",mentor:"师长"}[r]||r||"?";}
 function slotColor(s){return {sleep:"#475569",free:"#3b82f6",slack:"#34d399",busy:"#fbbf24",focus:"#a78bfa"}[s]||"#64748b";}
 // ───────────── 概览 ─────────────
+// ——— 图表: 手写 SVG / CSS (零外部依赖) ———
+// ⚠️ 这一段里**没有反引号** —— 整页是 Go 的 raw string, 模板字符串会把它当场截断。
+// ⚠️ 图表只做一件事: 把已经算好的读数画出来。判断留在 Go 侧, 页面不做推断。
+function chBox(w,h,inner){return '<svg class="ch" viewBox="0 0 '+w+' '+h+'" role="img">'+inner+"</svg>";}
+function chSeriesLen(series){var m=0;series.forEach(function(s){m=Math.max(m,(s.values||[]).length);});return m;}
+function chMax(series){var m=1;series.forEach(function(s){(s.values||[]).forEach(function(v){m=Math.max(m,Number(v)||0);});});return m;}
+function n2(v){var x=Number(v);return isFinite(x)?(Math.round(x*10)/10):"—";}
+function chLine(series,opt){
+  opt=opt||{};
+  var w=opt.w||100,h=opt.h||32,pad=2.2,n=Math.max(1,chSeriesLen(series)-1),mx=chMax(series),out="",j;
+  for(j=0;j<3;j++){var yy=pad+(j/2)*(h-pad*2);
+    out+='<line class="gl" x1="'+pad+'" y1="'+yy.toFixed(2)+'" x2="'+(w-pad)+'" y2="'+yy.toFixed(2)+'"/>';}
+  function X(i){return pad+(i/n)*(w-pad*2);}
+  function Y(v){return h-pad-(Math.max(0,Number(v)||0)/mx)*(h-pad*2);}
+  series.forEach(function(s){
+    var vals=s.values||[];if(!vals.length)return;
+    var col=s.color||"#a78bfa",pts=[],ar="";
+    vals.forEach(function(v,i){pts.push(X(i).toFixed(2)+","+Y(v).toFixed(2));});
+    if(series.length<2){
+      ar='<polygon class="ar" fill="'+col+'" points="'+X(0).toFixed(2)+","+(h-pad)+" "+pts.join(" ")+" "+
+        X(vals.length-1).toFixed(2)+","+(h-pad)+'"/>';
+    }
+    var last=vals.length-1;
+    out+=ar+'<polyline class="ln" points="'+pts.join(" ")+'" stroke="'+col+'"><title>'+esc(s.name||"")+" 最新 "+
+      n2(vals[last])+'</title></polyline><circle class="dt" cx="'+X(last).toFixed(2)+'" cy="'+Y(vals[last]).toFixed(2)+
+      '" r="1.5"><title>'+esc(s.name||"")+": "+n2(vals[last])+"</title></circle>";
+  });
+  var lbl="";
+  if(opt.labels&&opt.labels.length){
+    lbl='<div class="caxis"><span>'+esc(opt.labels[0])+'</span><span>'+
+      esc(opt.labels[opt.labels.length-1])+"</span></div>";
+  }
+  return chBox(w,h,out)+lbl;
+}
+function chLegend(items){
+  if(!items||!items.length)return "";
+  return '<div class="legend">'+items.map(function(it){
+    return '<span><i style="background:'+it.color+'"></i>'+esc(it.name)+"</span>";}).join("")+"</div>";
+}
+function chBars(items,opt){
+  opt=opt||{};
+  if(!items||!items.length)return empty();
+  var mx=1;items.forEach(function(it){mx=Math.max(mx,Number(it.value)||0);});
+  var out='<div class="cbars">';
+  items.forEach(function(it,i){
+    var v=Number(it.value)||0,p=Math.max(2,Math.round((v/mx)*100));
+    out+='<i title="'+esc(it.label+": "+v)+'" style="height:'+p+"%;animation-delay:"+(i*18)+'ms'+
+      (it.color?";background:"+it.color:"")+'></i>';
+  });
+  out+="</div>";
+  if(opt.labels!==false){
+    out+='<div class="caxis"><span>'+esc(items[0].label)+'</span><span>'+
+      esc(items[items.length-1].label)+"</span></div>";
+  }
+  return out;
+}
+function chRing(v,label,color){
+  var x=Math.max(0,Math.min(1,Number(v)||0)),off=(264*(1-x)).toFixed(1);
+  return '<div class="ring"><svg viewBox="0 0 100 100" role="img">'+
+    '<circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9"/>'+
+    '<circle class="rv" cx="50" cy="50" r="42" fill="none" stroke="'+(color||"#a78bfa")+
+    '" stroke-width="9" stroke-linecap="round" style="--to:'+off+'"/></svg>'+
+    '<div class="ringtx"><b class="gtext">'+pct(x)+"</b><span>"+esc(label||"")+"</span></div></div>";
+}
+function chHeat(cells,cols){
+  if(!cells||!cells.length)return empty();
+  var out='<div class="heat" style="grid-template-columns:repeat('+(cols||12)+',1fr)">';
+  cells.forEach(function(c,i){
+    var v=Math.max(0,Math.min(1,Number(c.v)||0));
+    out+='<i title="'+esc(c.title||"")+'" style="background:rgba(167,139,250,'+
+      (0.07+v*0.85).toFixed(2)+');animation-delay:'+(i*8)+'ms"></i>';
+  });
+  return out+"</div>";
+}
+function chTimeline(items){
+  if(!items||!items.length)return empty();
+  return '<ul class="tl">'+items.map(function(it){
+    return "<li><div>"+esc(it.text)+'</div><div class="t">'+esc(it.when||"")+"</div></li>";}).join("")+"</ul>";
+}
+// rollNumbers 数字滚动 —— **只滚纯数字**, 且 reduced-motion 下直接不滚。
+// ⚠️ 动效关掉时必须是**终值直接可见**, 而不是"从 0 开始但永远滚不完"。
+function rollNumbers(root){
+  if(!root)return;
+  if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  var els=root.querySelectorAll(".kpi b"),i;
+  for(i=0;i<els.length;i++){(function(e){
+    var raw=(e.textContent||"").trim();
+    if(!/^-?[0-9]+(\.[0-9]+)?$/.test(raw))return;
+    var to=parseFloat(raw),dec=(raw.split(".")[1]||"").length,t0=null;
+    function step(ts){
+      if(t0===null)t0=ts;
+      var k=Math.min(1,(ts-t0)/620),v=to*(1-Math.pow(1-k,3));
+      e.textContent=v.toFixed(dec);
+      if(k<1)requestAnimationFrame(step);else e.textContent=raw;
+    }
+    requestAnimationFrame(step);
+  })(els[i]);}
+}
+
+// ——— 状态页 (2026-10-16): 它现在怎么样 / 热力 / 关系两层 / 活动 ———
+// ⚠️ 这一页回答的是「它现在到底怎么样」—— 而这些读数原来散在库里**看不见**:
+// 心情/身体/睡眠/疲劳/中断/应变有判据没出口, 关系只有一层, 时序一张图都没有。
+// ⚠️ 页面**不做推断**: 档位、阶段、阈值全部是 Go 侧给的; 页面只画。
+function stageBadge(s){
+  var m={stranger:"#94a3b8",acquaint:"#3b82f6",familiar:"#34d399",intimate:"#f472b6"};
+  var c=m[s]||"#94a3b8";
+  return '<span class="chip" style="color:'+c+'">'+esc(s||"?")+"</span>";
+}
+function pState(){
+  var s=DATA.state||{}, bd=DATA.bonds||{}, hl=DATA.heatlog||{}, ms=DATA.msgs||{}, cn=DATA.counters||{};
+  var mood=s.mood||{}, fx=s.fatigue||{}, ef=s.body_effect||{}, body=s.body||{}, night=s.sleep||{};
+  var it=s.interruption||{}, heat=s.heat||[], scn=bd.scene||[], per=bd.person||[], th=bd.thresholds||{};
+  var logs=hl.log||[], series=ms.series||[], counters=cn.counters||{};
+  var out=[],i,heatP=null;
+  for(i=0;i<heat.length;i++){if(!heatP||heat[i].scene===bd.default_scene)heatP=heat[i];}
+  // —— 顶部 KPI: 一眼看全 ——
+  out.push(kpis([
+    kpi(mood.valence==null?"—":n(mood.valence,2),"心情","0 低落 → 1 轻快"),
+    kpi(mood.arousal==null?"—":n(mood.arousal,2),"唤醒","低唤醒走「慢/短」; 高唤醒才可能拿到拒绝权"),
+    kpi(fx.tier==null?"—":fx.tier,"疲劳档位",fx.reason||""),
+    kpi(fx.busy_minutes,"今日忙(分)"),
+    kpi(s.strain==null?"—":n(s.strain,2),"应变"),
+    kpi(heatP?n(heatP.value,1):"—","私聊热力"),
+    kpi(per.length,"人物层记录"),
+    kpi(heat.length,"热力场景")
+  ]));
+  out.push('<div class="grid">');
+  // —— 卡 1: 它现在怎么样 ——
+  var now=[];
+  now.push('<div class="ring2">'+chRing(Number(mood.valence)||0,"心情","#a78bfa")+
+    chRing(Number(mood.arousal)||0,"唤醒","#22d3ee")+"</div>");
+  if(body.active){
+    now.push(barrow(Math.min(1,Number(body.severity)||0),"","身体 "+esc(body.kind||"")+
+      (body.cause?" · "+esc(body.cause):"")+" (严重度 "+n(body.severity,2)+")"));
+  }else{
+    now.push('<p class="empty">身体: 现在没有不适</p>');
+  }
+  if(ef.DelayFactor){
+    now.push(barrow(Math.min(1,(Number(ef.DelayFactor)-1)/2),"","回复延迟 ×"+n(ef.DelayFactor,2)+
+      (ef.CanDecline?" · 这一轮可以拒绝":"")+" · 长度 ×"+n(ef.LengthFactor,2)));
+  }
+  if(night.SleepStartTS){
+    now.push('<div class="stat"><b class="gtext">'+esc(String(night.SleepStartTS).slice(11,16))+" → "+
+      esc(String(night.WakeTS||"").slice(11,16))+'</b><span>昨晚</span></div>');
+    var sc=[];
+    if(night.LatencyMin)sc.push("入睡 "+night.LatencyMin+" 分");
+    if(night.Interrupts)sc.push("醒 "+night.Interrupts+" 次");
+    if(night.Nightmare)sc.push("噩梦");
+    if(night.Insomnia)sc.push("失眠");
+    if(sc.length)now.push(chips(sc));
+  }else{
+    now.push('<p class="empty">还没有昨晚的记录</p>');
+  }
+  if(it.reason){
+    now.push(chTimeline([
+      {text:"说了一句「"+it.reason+"」",when:it.anchor_ts||""},
+      {text:(it.due?"到点了 —— 该接着说":"还挂着 (没到点就不提)"),when:it.due_ts||""}
+    ]));
+  }else{
+    now.push('<p class="empty">没有挂起的中断</p>');
+  }
+  out.push(card("它现在怎么样",now.join(""),errOf("state"),false,""));
+  // —— 卡 2: 热力 ——
+  var hb=[];
+  if(heat.length){
+    heat.forEach(function(h){
+      var cap=Number(h.cap_at_settle)||0,v=Number(h.value)||0;
+      hb.push(barrow(cap>0?Math.min(1,v/cap):0,"",esc(h.scene)+"  "+n(v,1)+" / "+(cap?n(cap,0):"—")));
+    });
+    hb.push('<div class="meta" style="margin:4px 0 0;text-align:left">上限是**上次结算时**那一个 (现算需要引擎配置)</div>');
+  }else{
+    hb.push(empty("还没有热力记录 —— 私聊里说一句就会有一条"));
+  }
+  if(logs.length){
+    hb.push(chLine([{name:"热力值",color:"#a78bfa",values:logs.map(function(r){return Number(r.after)||0;})}],
+      {h:34,labels:[String(logs[0].ts||"").slice(5,16),String(logs[logs.length-1].ts||"").slice(5,16)]}));
+    hb.push('<div class="meta" style="margin:8px 0 2px;text-align:left">每一笔的增量 (颜色 = 当时的槽位)</div>');
+    hb.push(chBars(logs.slice(-40).map(function(r){
+      return {label:String(r.ts||"").slice(5,16)+" "+esc(r.slot_state||"?")+" "+esc(r.reason||""),
+              value:Number(r.delta)||0,color:slotColor(r.slot_state)};
+    })));
+  }
+  out.push(card("热力 · 每条主动消息 25 点",hb.join(""),errOf("heatlog"),false,""));
+  // —— 卡 3: 关系两层 ——
+  var rb=[];
+  rb.push('<div class="meta" style="text-align:left">阈值 (来自代码): 熟人 '+n(th.acquaint,2)+
+    " · 熟悉 "+n(th.familiar,2)+" · 亲密 "+n(th.intimate,2)+'</div>');
+  rb.push('<h3 class="sub">场景层 · 每个场景一行</h3>');
+  rb.push(tbl(["场景","形态","亲密度","敬意","熟悉度","阶段"],scn.map(function(r){
+    return '<tr><td class="mono">'+esc(r.scene_key)+"</td><td>"+esc(r.kind||"")+"</td><td>"+n(r.closeness,2)+
+      "</td><td>"+n(r.regard,2)+"</td><td>"+n(r.familiarity,3)+"</td><td>"+stageBadge(r.stage)+"</td></tr>";
+  })));
+  rb.push('<h3 class="sub">人物层 · 跨场景按 uin 累积</h3>');
+  rb.push(tbl(["uin","亲密度","敬意","熟悉度","阶段"],per.map(function(r){
+    return '<tr><td class="mono">'+esc(r.uin)+"</td><td>"+n(r.closeness,2)+"</td><td>"+n(r.regard,2)+
+      "</td><td>"+n(r.familiarity,3)+"</td><td>"+stageBadge(r.stage)+"</td></tr>";
+  })));
+  rb.push('<p class="hint">群与私聊是**同一个人**: 群里聊得多, 人物层涨, 私聊那段关系跟着变熟 —— 而群里只读自己那一行。</p>');
+  out.push(card("关系 · 两层",rb.join(""),errOf("bonds"),false,""));
+  // —— 卡 4: 活动 (30 天) ——
+  var ab=[];
+  if(series.length){
+    ab.push(chLine([
+      {name:"ta 说的",color:"#22d3ee",values:series.map(function(d){return Number(d.user)||0;})},
+      {name:"它说的",color:"#a78bfa",values:series.map(function(d){return Number(d.ai)||0;})}
+    ],{h:34,labels:[series[0].day,series[series.length-1].day]}));
+    ab.push(chLegend([{name:"ta 说的",color:"#22d3ee"},{name:"它说的",color:"#a78bfa"}]));
+  }else{
+    ab.push(empty("这 30 天还没有消息"));
+  }
+  var opens=counters.ai_opens||[],rounds=counters.rounds||[];
+  if(opens.length){
+    ab.push('<h3 class="sub">每日主动开口</h3>');
+    ab.push(chBars(opens.map(function(d){return {label:d.day,value:Number(d.n)||0};})));
+  }
+  if(rounds.length){
+    ab.push('<h3 class="sub">每日轮次</h3>');
+    ab.push(chBars(rounds.map(function(d){return {label:d.day,value:Number(d.n)||0};})));
+  }
+  out.push(card("活动 · 最近 30 天",ab.join(""),errOf("msgs"),false,""));
+  out.push("</div>");
+  return out.join("");
+}
+
 function pOverview(){
   var st=DATA.status||{}, ob=DATA.observation||{}, w=DATA.world||{}, b=DATA.bias||{};
   var c=st.counters||{}, stt=ob.stance||{};
@@ -875,7 +1166,9 @@ function paint(){
   else if(TAB==="social")h=pSocial();
   else if(TAB==="sticker")h=pSticker();
   else if(TAB==="slang")h=pSlang();
+  else if(TAB==="state")h=pState();
   el("view").innerHTML=h;
+  rollNumbers(el("view"));
 }
 function tick(){
   if(!el("auto").checked)return;
