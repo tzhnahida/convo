@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §4.2 身体的持久化与入账 ———

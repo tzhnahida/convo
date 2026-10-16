@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // Dice / DiceFloat 是本包唯一的随机接缝 (与 clock 同构)。
@@ -321,9 +321,20 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		immediate = false // 30-90 分钟延迟
 	}
 	if !immediate {
-		// busy: 排延迟回复 (骰子在系统: 30-90min)
-		e.scheduleDelayedReply()
-		return nil
+		// §4.3 C3: **拒绝权 armed 时不许装死**。
+		//
+		// ⚠️ 非 immediate 的分支是「排一条延迟回复然后 return」—— 那正是装死,
+		// 而 §4.3 要的是**直说**「今天不想聊」。armed 不把这一轮顶成即时,
+		// 许可就永远发不出去, 机制等于没接 (DeclineForcesImmediate 的注释原文)。
+		// ⚠️ 睡眠窗除外 —— 睡着的静默不是拒绝, 那条判据在 DeclineForcesImmediate 里。
+		if permit, _ := e.declinePermit(now, text); permit && DeclineForcesImmediate(state) {
+			log.Info("convo:engine", "拒绝权 armed —— 这一轮不排延迟回复, 走即时直说 (§4.3 C3)")
+			immediate = true
+		} else {
+			// busy: 排延迟回复 (骰子在系统: 30-90min)
+			e.scheduleDelayedReply()
+			return nil
+		}
 	}
 
 	// 5. 即时回复 — 系统骰子: 5-25s 打字延迟 (真人节奏; 教学/紧急/破功除外)
@@ -404,7 +415,14 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		log.Error("convo:engine", "reply: %v", err)
 		return err
 	}
-	return e.sendFrame(ctx, frame)
+	if err := e.sendFrame(ctx, frame); err != nil {
+		return err
+	}
+	// §4.3 中断-恢复的**生产者** —— 见 fatigue.go 的 maybeSuspend。
+	// ⚠️ 挂在「她刚说完一句」之后: 它是**对话中的动作**, 不是 tick 动作
+	// (挂 tick 上会变成「没事找事地宣布自己去忙了」)。
+	e.maybeSuspend(ctx, now)
+	return nil
 }
 
 // recentDialog 取最近 N 条对话组装 L1 历史文本 ("你:/她:" 前缀, 保持上下句联系)。
@@ -722,6 +740,8 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 		// §4.3 拒绝权: 它**真的说了**今天不想聊才记一次 (配额 1/天)。
 		// 不记的话配额永远用不掉, "最多说一次"就是个摆设。
 		e.noteDeclineIfAny(txt)
+		// §4.6 M21 违抗率: 同样是**实发**口径 (降级产物不是它说的)。
+		e.noteDefianceIfAny(txt)
 		// §5.5 **找补账本** (M10): 它真的说了"改天请你"这类话才算找补。
 		//
 		// ⚠️ 位置在**发送之后**这一段(与上面那条同区):
@@ -1070,7 +1090,7 @@ func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
 		// ⚠️ 它排在 ask 之前: 一条正在温着的灵光比一次例行询问有价值得多,
 		// 而它自己有**硬闸** —— 周配额 ≤2(SparkSharePerWeek) + 说过的跳过 + 档位 fresh/warm。
 		// ⚠️ 周配额是**生活上限**, 只在 ShareableSpark 里判, **不进提示词**(§4.6.1)。
-		if spTopic, spID, ok := e.sparkShareTopic(now); ok {
+		if spTopic, spID, ok := e.sparkShareTopic(now, topic.Text); ok {
 			e.SpendSceneHeat(DefaultSceneKey, now)
 			// ⚠️ **发出去之后才记 said_ts** —— 不用 defer:
 			// 那条路一旦失败也会把它标成"说过了", 于是这条灵光**永远不再被说**,
@@ -1079,6 +1099,18 @@ func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
 				return perr
 			}
 			e.MarkSparkSaidAfter(spID)
+			return nil
+		}
+		// §2.5.4 **分享学到的东西**: 与灵光同一落点 (段 7.3), 同一套记账纪律。
+		//
+		// ⚠️ 排在灵光**之后**: 「一条正在温着的灵光」优先 —— 那是她自己的东西,
+		// 而这是外面看来的。两者共用**同一个**周计数器 (契约 S11: 合计 ≤2/周)。
+		if lnTopic, lnID, ok := e.learnShareTopic(now, e.currentState()); ok {
+			e.SpendSceneHeat(DefaultSceneKey, now)
+			if perr := e.proactive(ctx, p, DialogInput{State: e.currentState(), ActionKind: ActActiveOpen, Topic: lnTopic}, "ai_opens", day); perr != nil {
+				return perr
+			}
+			e.MarkLearnSharedAfter(lnID, now)
 			return nil
 		}
 		// 双向索取合流: 本周 due 且系统掷中 → 话题注入 ask 倾向
@@ -1166,6 +1198,16 @@ func (e *Engine) proactive(ctx context.Context, p *PersonaProfile, in DialogInpu
 	if DayMoodBlocksAction(in.ActionKind, DayMoodOf(clock.Today())) {
 		log.Info("convo:engine", "今天不开场 (低意愿日) —— 无归因, 不写 MoodLog")
 		return nil
+	}
+	// §4.3 **挂起中**: 主动开口先别提 —— 她刚说了「等下 我拿个外卖」。
+	//
+	// ⚠️ 只拦主动开口, **不拦回话** —— 中断不是静音开关 (见 SuspendedAt 的注释):
+	// 用户消息该回照回, C 层求助仍然即时。
+	if in.ActionKind == ActActiveOpen {
+		if it, ok, _ := e.Store.LoadInterruption(); ok && it.SuspendedAt(clock.Now()) {
+			log.Info("convo:engine", "挂起中 —— 这次主动开口先不提 (%s)", it.Reason)
+			return nil
+		}
 	}
 	frame, err := e.dialogReply(ctx, in, p)
 	if err != nil {
@@ -1985,8 +2027,22 @@ func (e *Engine) dailyExtract(ctx context.Context) error {
 		log.Warn("convo:engine", "extract: %v", err)
 		return err
 	}
+	// §7.5 群公共层要知道「是哪个群」与「谁先说的」—— 由**调用方**填 (抽取器看不见这两件事)。
+	delta.SceneKey, delta.OriginUIN = SessionSceneOf(msgs)
 	if err := e.Store.ApplySessionDelta(clock.Today(), delta); err != nil {
 		return err
+	}
+	// §4.5.3 第四档: **行为模式 → 写回日程表**。
+	//
+	// ⚠️ 这条通路原来是**断的**: habit 档在 `ApplySessionDelta` 的写入口被丢弃
+	// (那里的注释写着"habit 档则要去改日程 (§4.5.3)"), 而"去改日程"的那一半
+	// 从来没有调用者 (`HabitFromMemories` 零调用) —— 于是它的表现是
+	// 「它记得你熬夜, 但作息一动不动」。
+	//
+	// ⚠️ 必须走 `AdjustSleepPoint` 的四条护栏 (单次≤30 / 周≤120 / 睡眠窗≥6h / 一天一次)。
+	// 在这里直接改日程 = 绕过全部护栏, 而那条路与失眠共用同一个偏移量。
+	if habits := HabitFromDeltas(delta.Memories, clock.Now()); len(habits) > 0 {
+		e.applyHabitSignals(habits)
 	}
 	log.Info("convo:engine", "daily extract: summary=%q memories=%d", delta.Summary, len(delta.Memories))
 	return nil

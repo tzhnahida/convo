@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— §4.2 身体: 契约测试 ———

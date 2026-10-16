@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— 模块 11: 梗学习 ———

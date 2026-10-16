@@ -1,4 +1,4 @@
-module github.com/tzhnahida/VocabLock
+module github.com/tzhnahida/convo
 
 go 1.26.3
 

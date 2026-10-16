@@ -43,17 +43,19 @@ func TestCqSegments_textAroundCodes(t *testing.T) {
 	}
 }
 
-func TestOneBotEvent_StringMessage_ImageFiles(t *testing.T) {
+// ⚠️ 2026-10-16: 原来测的是 `ImageFiles()` —— 那个函数**只有测试在调**, 已删。
+// 不变量本身很值钱 (url 优先 + HTML 反转义, 2026-09-07 Pi 实证), 所以移植到**活接口** `ImageRefs`。
+func TestOneBotEvent_StringMessage_ImageRefs(t *testing.T) {
 	// Pi 证据 1: 事件 message 是 CQ 字符串且带嵌套引号 (JSON 编码后为双反斜杠形态也兼容)
 	raw := `[CQ:image,file=abc.jpg,url=https://example.com/download?fileid=1&amp;rkey=2]` // JSON string form
 	b, _ := json.Marshal(raw)                                                             // 模拟 wire 上的 JSON 字符串值
 	ev := OneBotEvent{Message: b}
-	files := ev.ImageFiles()
-	if len(files) != 1 {
-		t.Fatalf("ImageFiles on CQ string = %v, want 1", files)
+	refs := ev.ImageRefs()
+	if len(refs) != 1 {
+		t.Fatalf("ImageRefs on CQ string = %v, want 1", refs)
 	}
-	if files[0] != "https://example.com/download?fileid=1&rkey=2" {
-		t.Fatalf("ImageFiles 应优先 url 且反转义, got %q", files[0])
+	if refs[0].Path != "https://example.com/download?fileid=1&rkey=2" {
+		t.Fatalf("ImageRefs 应优先 url 且反转义, got %q", refs[0].Path)
 	}
 	// PlainText 不含 CQ 码残渣
 	pt := ev.PlainText()
@@ -68,9 +70,9 @@ func TestOneBotEvent_ArrayMessage_StillWorks(t *testing.T) {
 	if got := ev.PlainText(); got != "你好" {
 		t.Fatalf("PlainText = %q", got)
 	}
-	files := ev.ImageFiles()
-	if len(files) != 1 || files[0] != "/a/b.png" {
-		t.Fatalf("ImageFiles = %v", files)
+	refs := ev.ImageRefs()
+	if len(refs) != 1 || refs[0].Path != "/a/b.png" {
+		t.Fatalf("ImageRefs = %v", refs)
 	}
 }
 

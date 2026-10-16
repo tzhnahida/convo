@@ -104,15 +104,6 @@ func FeedbackToBoundary(kind FeedbackKind, topic string) (string, bool) {
 // ⚠️ 一次就升格等于「它被说一句就再也不提了」—— 那是畏缩, 不是长记性。
 const FeedbackPromoteThreshold = 3
 
-// FeedbackBoundaryLine 边界 → 注入段。
-func FeedbackBoundaryLine(boundary string) (string, bool) {
-	b := strings.TrimSpace(boundary)
-	if b == "" {
-		return "", false
-	}
-	return "【边界】" + b + "。**这是一条硬线**, 不是建议。", true
-}
-
 // EnsureFeedbackSchema 建表。计数与边界同表: 边界是计数的**终态**, 分开存会有一天不一致。
 func EnsureFeedbackSchema(db *sql.DB) error {
 	_, err := db.Exec("CREATE TABLE IF NOT EXISTS convo_feedback (" +

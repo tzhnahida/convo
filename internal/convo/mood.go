@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— 世界模型: 事件总线 (§3.2) ———

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -466,7 +466,8 @@ CREATE TABLE IF NOT EXISTS convo_heat_log (
 	v_before   REAL NOT NULL DEFAULT 0,
 	v_after    REAL NOT NULL DEFAULT 0,
 	seq        INTEGER NOT NULL DEFAULT 0,
-	msg_ref    TEXT NOT NULL DEFAULT ''
+	msg_ref    TEXT NOT NULL DEFAULT '',
+	slot_state TEXT NOT NULL DEFAULT ''
 );` + `
 CREATE INDEX IF NOT EXISTS ix_heat_log ON convo_heat_log(scene_key, ts);`
 
@@ -480,7 +481,15 @@ func EnsureHeatSchema(s *Store) error {
 		return fmt.Errorf("热力 schema: store 未打开")
 	}
 	_, err := s.DB.Exec(heatSchema)
-	return err
+	if err != nil {
+		return err
+	}
+	// 老库补列 —— `CREATE TABLE IF NOT EXISTS` **不会**给已存在的表加列,
+	// 而生产库里的 `convo_heat_log` 是没有 `slot_state` 的那一版 (2026-10-16 前)。
+	// ⚠️ 错误**故意忽略**: 列已存在时 SQLite 报 "duplicate column name", 那是正常的幂等路径
+	// (与 store.go / bodyaxis.go 里那几处 ALTER 同规)。
+	_, _ = s.DB.Exec(`ALTER TABLE convo_heat_log ADD COLUMN slot_state TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 // LoadHeat 读一个场景的热力事实。
@@ -527,6 +536,12 @@ type HeatSettle struct {
 	Seq        int     // 本条互动在本会话内的序号 (非互动事件 = 0)
 	NewSession bool
 	Clamped    bool
+	// SlotState 当时她的日程槽状态 (focus/busy/slack/free; 空 = 取不到).
+	//
+	// ⚠️ 2026-10-16 补: `gain` 是 `GainByState[slotState]` 的乘积, 而 `focus` 的权重
+	// 显式是 0、`sleep` 根本不在表里 —— 于是「delta 为什么是 0」这个问题,**答案就在这一列**。
+	// 没它的时候查一次要按小时反推整晚 (见台账 §2.87/§2.88)。
+	SlotState string
 }
 
 // HeatInteraction 一次场景内互动 (场景里**任何人的任何一条**消息)。
@@ -550,7 +565,7 @@ type heatDeltaFn func(st HeatState) (delta float64, seq int, newSess bool, reaso
 // 读失败原样返回错误: 往哪边倒由调用方定 —— HeatQuotaAt 往"说话"倒,
 // 入账路径则老老实实报错 (它不出声的话, 表现是"热力永远不涨", 看不出是坏了)。
 func (s *Store) settleHeat(sceneKey string, now time.Time, cap float64, cfg HeatConfig,
-	refUIN, msgRef string, touchLastMsg bool, fn heatDeltaFn) (HeatSettle, error) {
+	refUIN, msgRef, slotState string, touchLastMsg bool, fn heatDeltaFn) (HeatSettle, error) {
 	n := cfg.Normalized()
 	st, _, err := s.LoadHeat(sceneKey)
 	if err != nil {
@@ -580,7 +595,7 @@ func (s *Store) settleHeat(sceneKey string, now time.Time, cap float64, cfg Heat
 		reason = HeatReasonCapClamp
 	}
 	res := HeatSettle{Before: before, Delta: after - before, After: after, Cap: cap,
-		Seq: seq, NewSession: isNew, Clamped: clamped}
+		Seq: seq, NewSession: isNew, Clamped: clamped, SlotState: slotState}
 	if err := s.appendHeatLog(sceneKey, now, reason, refUIN, msgRef, res); err != nil {
 		// 流水写失败**不算结算失败** —— 事实已经落库了; 但也绝不静默 (P7 的教训)。
 		log.Warn("convo:heat", "热力流水写入失败 (场景 %s, %s): %v", sceneKey, reason, err)
@@ -609,7 +624,7 @@ func (s *Store) settleHeat(sceneKey string, now time.Time, cap float64, cfg Heat
 // 500 个不同发言人各 1 条与同一个人 500 条**逐值相同** (R15)。
 func (s *Store) RecordHeatInteraction(in HeatInteraction, cfg HeatConfig) (HeatSettle, error) {
 	n := cfg.Normalized()
-	return s.settleHeat(in.SceneKey, in.Now, n.CapOf(in.Stage), n, in.Speaker, in.MsgRef, true,
+	return s.settleHeat(in.SceneKey, in.Now, n.CapOf(in.Stage), n, in.Speaker, in.MsgRef, in.SlotState, true,
 		func(st HeatState) (float64, int, bool, string) {
 			seq, isNew := HeatSessionSeq(st.LastMsgTS, st.SessionSeq, in.Now, n.SessionGapMin)
 			return HeatGain(seq, in.SlotState, in.Mods, n), seq, isNew, HeatReasonGain
@@ -623,7 +638,7 @@ func (s *Store) RecordHeatInteraction(in HeatInteraction, cfg HeatConfig) (HeatS
 // "为特定群形态做设计", 违反 A3。
 func (s *Store) SpendHeat(sceneKey string, now time.Time, stage string, cfg HeatConfig) (HeatSettle, error) {
 	n := cfg.Normalized()
-	return s.settleHeat(sceneKey, now, n.CapOf(stage), n, "", "", true,
+	return s.settleHeat(sceneKey, now, n.CapOf(stage), n, "", "", "", true,
 		func(HeatState) (float64, int, bool, string) {
 			return -n.CostPerMsg, 0, false, HeatReasonCost
 		})
@@ -656,21 +671,22 @@ func (s *Store) SpendHeat(sceneKey string, now time.Time, stage string, cfg Heat
 
 func (s *Store) appendHeatLog(sceneKey string, now time.Time, reason, refUIN, msgRef string, r HeatSettle) error {
 	_, err := s.DB.Exec(`INSERT INTO convo_heat_log
-		(ts, scene_key, reason, ref_uin, delta, v_before, v_after, seq, msg_ref)
-		VALUES(?,?,?,?,?,?,?,?,?)`,
-		now.Format(bodyTSLayout), sceneKey, reason, refUIN, r.Delta, r.Before, r.After, r.Seq, msgRef)
+		(ts, scene_key, reason, ref_uin, delta, v_before, v_after, seq, msg_ref, slot_state)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		now.Format(bodyTSLayout), sceneKey, reason, refUIN, r.Delta, r.Before, r.After, r.Seq, msgRef, r.SlotState)
 	return err
 }
 
 // HeatLogRow 一条热力流水。
 type HeatLogRow struct {
-	TS     string
-	Reason string
-	RefUIN string
-	Delta  float64
-	Before float64
-	After  float64
-	Seq    int
+	TS        string
+	Reason    string
+	RefUIN    string
+	Delta     float64
+	Before    float64
+	After     float64
+	Seq       int
+	SlotState string // 当时她的日程槽 (focus 的权重是 0 —— 见 HeatSettle.SlotState)
 }
 
 // RecentHeatLog 读最近的热力流水 (§12: 机制有没有生效, 要看数字)。
@@ -680,7 +696,7 @@ func (s *Store) RecentHeatLog(sceneKey string, limit int) ([]HeatLogRow, error) 
 		limit = 20
 	}
 	q := `SELECT COALESCE(ts,''), COALESCE(reason,''), COALESCE(ref_uin,''), COALESCE(delta,0),
-		COALESCE(v_before,0), COALESCE(v_after,0), COALESCE(seq,0) FROM convo_heat_log`
+		COALESCE(v_before,0), COALESCE(v_after,0), COALESCE(seq,0), COALESCE(slot_state,'') FROM convo_heat_log`
 	args := []interface{}{}
 	if sceneKey != "" {
 		q += ` WHERE scene_key=?`
@@ -696,7 +712,7 @@ func (s *Store) RecentHeatLog(sceneKey string, limit int) ([]HeatLogRow, error) 
 	var out []HeatLogRow
 	for rows.Next() {
 		var r HeatLogRow
-		if err := rows.Scan(&r.TS, &r.Reason, &r.RefUIN, &r.Delta, &r.Before, &r.After, &r.Seq); err != nil {
+		if err := rows.Scan(&r.TS, &r.Reason, &r.RefUIN, &r.Delta, &r.Before, &r.After, &r.Seq, &r.SlotState); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

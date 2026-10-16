@@ -3,7 +3,7 @@ package convo
 import (
 	"database/sql"
 	"encoding/json"
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— 模块 4: 话题引擎 (P0 降级版, §8.4 步骤 1-3 锚定词检索砍) ———

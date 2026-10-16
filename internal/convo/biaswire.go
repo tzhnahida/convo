@@ -1,6 +1,6 @@
 package convo
 
-import "github.com/tzhnahida/VocabLock/internal/log"
+import "github.com/tzhnahida/convo/internal/log"
 
 // §6.8 偏向**上裁决路径**的接线。
 //

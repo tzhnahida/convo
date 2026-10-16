@@ -36,7 +36,7 @@ func TestParseCastStatus_PlainArray(t *testing.T) {
 	if !ok || len(got) != 2 {
 		t.Fatalf("解析失败: ok=%v got=%v", ok, got)
 	}
-	if !strings.Contains(got["德克萨斯"], "盘货") {
+	if !strings.Contains(got["德克萨斯"].Status, "盘货") {
 		t.Fatalf("内容不对: %v", got)
 	}
 }
@@ -44,7 +44,7 @@ func TestParseCastStatus_PlainArray(t *testing.T) {
 // 有的模型会包一层 {"cast":[...]} —— 认它, 但认不出就失败, 不许猜。
 func TestParseCastStatus_WrappedObject(t *testing.T) {
 	got, ok := ParseCastStatus(`{"cast":[{"name":"空","status":"在录新歌"}]}`)
-	if !ok || got["空"] != "在录新歌" {
+	if !ok || got["空"].Status != "在录新歌" {
 		t.Fatalf("包一层就解析不出来: ok=%v got=%v", ok, got)
 	}
 	for _, bad := range []string{"", "不是 JSON", "[]", `[{"name":"","status":"x"}]`, `[{"name":"a","status":""}]`} {
@@ -61,12 +61,40 @@ func TestParseCastStatus_TruncatesRunesNotBytes(t *testing.T) {
 	if !ok {
 		t.Fatal("解析失败")
 	}
-	s := got["a"]
+	s := got["a"].Status
 	if !utf8.ValidString(s) {
 		t.Fatalf("截出了坏 UTF-8: %q", s)
 	}
 	if n := utf8.RuneCountInString(s); n != CastStatusMaxRunes {
 		t.Fatalf("应留 %d 个字符, 实际 %d", CastStatusMaxRunes, n)
+	}
+}
+
+// TestApplyCastStatus_LeftRetiresMember
+//
+// ⚠️ §3.6.5c「明确退出」的生产者就是这里: 模型在日程里写了**结局** (「搬去南方了」)。
+// 没有这一半, 退出就只剩「60 天没被提起」那条自然沉降 ——
+// 而一个「他搬家了」的角色会一直留在当下生活层里, 然后若无其事地出现。
+func TestApplyCastStatus_LeftRetiresMember(t *testing.T) {
+	b := WorldBible{Cast: []CastMember{castOf("德克萨斯", "旧的", "2026-10-13")}}
+	got := ApplyCastStatus(b, map[string]CastStatusUpdate{
+		"德克萨斯": {Status: "搬走前跟我道了别", Left: "搬去南方了"},
+	}, "2026-10-14")
+	if !got.Cast[0].Retired {
+		t.Fatalf("叙述了结局却没退出: %+v", got.Cast[0])
+	}
+	if got.Cast[0].RetireWhy != "搬去南方了" {
+		t.Fatalf("退出理由没记下: %q", got.Cast[0].RetireWhy)
+	}
+	// 退出后必须在「过去的人」那一侧 —— 可以被回忆提起, 但不参与当下。
+	if len(ActiveCast(got)) != 0 || len(PastCast(got)) != 1 {
+		t.Fatalf("退出后应当只剩过去的人: active=%d past=%d", len(ActiveCast(got)), len(PastCast(got)))
+	}
+	// ⚠️ 反面: **只有 status、没有 left** 的人不许被退掉 (默认留空 = 还在过日子)。
+	b2 := WorldBible{Cast: []CastMember{castOf("可颂", "旧的", "2026-10-13")}}
+	got2 := ApplyCastStatus(b2, map[string]CastStatusUpdate{"可颂": {Status: "在算账"}}, "2026-10-14")
+	if got2.Cast[0].Retired {
+		t.Fatal("没写 left 却被退掉了 —— 那等于「忘了这个人」")
 	}
 }
 
@@ -80,7 +108,7 @@ func TestApplyCastStatus_UnmatchedKeepOldDay(t *testing.T) {
 		castOf("德克萨斯", "旧的", "2026-10-13"),
 		castOf("可颂", "也可颂", "2026-10-13"),
 	}}
-	got := ApplyCastStatus(b, map[string]string{"德克萨斯": "新的"}, "2026-10-14")
+	got := ApplyCastStatus(b, map[string]CastStatusUpdate{"德克萨斯": {Status: "新的"}}, "2026-10-14")
 	if got.Cast[0].Status != "新的" || got.Cast[0].StatusDay != "2026-10-14" {
 		t.Fatalf("命中的人没更新: %+v", got.Cast[0])
 	}

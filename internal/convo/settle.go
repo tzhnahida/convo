@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— §3.6.8 事件沉降规则 ———

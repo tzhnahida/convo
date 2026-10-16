@@ -247,55 +247,33 @@ func TestGuard_LineNeverRefuses(t *testing.T) {
 
 // ── §7.2 联想式检索 ───────────────────────────────────────
 
-func assocFixture() *AssocIndex {
-	return BuildAssocIndex([]AssocItem{
-		{Key: "cat", Text: "你家那只猫上次把花瓶推下去了", Weight: 0.1,
-			Cues: []AssocCue{{Token: "猫", Kind: "entity"}, {Token: "宠物店", Kind: "place"}}},
-		{Key: "heavy", Text: "一段权重极高但没有任何线索的记忆", Weight: 99},
-		{Key: "exam", Text: "你上次说要去考的那个证", Weight: 0.5,
-			Cues: []AssocCue{{Token: "考试", Kind: "entity"}}},
-	})
-}
+// ⚠️ 2026-10-16: 索引版 (`BuildAssocIndex` / `(*AssocIndex).Associate` / `TokenCount`)
+// **已删** —— 活的那条是 `AssociateMemories` + `assocNote`(见 assoccue_test.go / assocwire_test.go)。
+// 下面这两条是**从索引版移植过来的不变量**: 它们说的规则归整条联想链, 不归某个实现。
 
-// 头号反面用例: 没有线索就不许联想。
+// 头号反面用例: 没有共享线索就不许联想。
 func TestAssoc_NoCueNoAssociation(t *testing.T) {
-	ix := assocFixture()
-	if _, _, ok := ix.Associate("今天天气不错啊", nil); ok {
-		t.Fatal("nothing in the cue index was mentioned - must not associate")
+	mems := []Memory{{MemID: "cat", V: "你家那只猫上次把花瓶推下去了", Kind: "fact", Confidence: 0.9}}
+	if _, _, ok := AssociateMemories(mems, "今天天气不错啊", nil); ok {
+		t.Fatal("nothing in the cue set was mentioned - must not associate")
 	}
-	if _, _, ok := ix.Associate("", nil); ok {
+	if _, _, ok := AssociateMemories(mems, "", nil); ok {
 		t.Fatal("empty text must not associate")
 	}
 }
 
-// 第二条反面用例: 权重再高, 没有线索也不许被选中。
-func TestAssoc_WeightIsNotTheEntry(t *testing.T) {
-	ix := assocFixture()
-	it, _, ok := ix.Associate("我刚路过宠物店", nil)
-	if !ok || it.Key != "cat" {
-		t.Fatalf("want cat via the place cue, got ok=%v key=%s", ok, it.Key)
+// 第二条不变量: **线索必须真的共享** —— 有共享线索才联想, 没有就不许。
+//
+// ⚠️ 它是从索引版移植来的: 旧实现按"单字实词必须留"写, 而现在的线索是**二元组**
+// (`BigramCues`), 「猫」靠「只猫」这样的组活下来 —— 规则没变, 机制换了。
+// 用长度当判据那一版会把单字实词一并杀掉, 现象是"它从来想不起你那只猫"。
+func TestAssoc_SingleRuneContentWordSurvives(t *testing.T) {
+	mems := []Memory{{MemID: "cat", V: "你那只猫把花瓶推下去了", Kind: "fact", Confidence: 0.9}}
+	if _, _, ok := AssociateMemories(mems, "我刚才看到一只猫", nil); !ok {
+		t.Fatal("单字实词(猫)必须能触发联想 —— 用长度当判据会把它丢掉")
 	}
-	if it.Key == "heavy" {
-		t.Fatal("a weight-99 item with no cue must never be picked")
-	}
-}
-
-func TestAssoc_SkipAndRune(t *testing.T) {
-	ix := assocFixture()
-	if _, _, ok := ix.Associate("宠物店", map[string]bool{"cat": true}); ok {
-		t.Fatal("skip must remove the only matching item")
-	}
-	// 停用字必须丢, 但单字**实词**必须留 —— 长度不是判据。
-	stop := BuildAssocIndex([]AssocItem{{Key: "x", Text: "t", Cues: []AssocCue{{Token: "我"}}}})
-	if stop.TokenCount() != 0 {
-		t.Fatal("single-rune function words are noise and must be dropped")
-	}
-	keep := BuildAssocIndex([]AssocItem{{Key: "cat", Text: "你那只猫", Cues: []AssocCue{{Token: "猫"}}}})
-	if keep.TokenCount() != 1 {
-		t.Fatal("a single-rune CONTENT word must survive - dropping it means it never recalls your cat")
-	}
-	if _, _, ok := keep.Associate("我刚才看到一只猫", nil); !ok {
-		t.Fatal("a single-rune content cue must be able to fire")
+	if _, cue, ok := AssociateMemories(mems, "我今天很累", nil); ok {
+		t.Fatalf("没有共享线索时不许联想, 实得 cue=%v", cue)
 	}
 }
 
@@ -437,14 +415,20 @@ func TestFold_SaveIsIdempotent(t *testing.T) {
 	if ins2 {
 		t.Fatal("second save on the same day must be ignored")
 	}
-	got, ok, err := LoadFold(s.DB, "o", "group:1", "2026-03-01")
-	if err != nil || !ok {
-		t.Fatalf("load failed: ok=%v err=%v", ok, err)
+	// ⚠️ `LoadFold` 于 2026-10-16 删除 (折叠由消息重算, 全库没有"事后读回"的消费者)。
+	// 断言不变, 改成直接读库。
+	var gotTotal int
+	var gotText string
+	if err := s.DB.QueryRow("SELECT total, text FROM convo_fold WHERE owner=? AND scene_key=? AND day=?",
+		"o", "group:1", "2026-03-01").Scan(&gotTotal, &gotText); err != nil {
+		t.Fatalf("折叠行读不回来: %v", err)
 	}
-	if got.Total != r.Total || got.Text != r.Text {
-		t.Fatalf("the first fold must survive, got %+v", got)
+	if gotTotal != r.Total || gotText != r.Text {
+		t.Fatalf("the first fold must survive, got total=%d text=%q", gotTotal, gotText)
 	}
-	if _, ok, _ := LoadFold(s.DB, "o", "group:1", "2026-03-02"); ok {
+	var anyDay string
+	if err := s.DB.QueryRow("SELECT day FROM convo_fold WHERE owner=? AND scene_key=? AND day=?",
+		"o", "group:1", "2026-03-02").Scan(&anyDay); err == nil {
 		t.Fatal("a missing day must report not-found, not an empty memory")
 	}
 }

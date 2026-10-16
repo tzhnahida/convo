@@ -4,6 +4,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §4.4.3 记忆四档 (夜间批的第 2 步) ———
@@ -116,41 +119,6 @@ func isBoundaryKind(kind string) bool {
 	return strings.EqualFold(strings.TrimSpace(kind), "boundary")
 }
 
-// LongMemoryDecay 长期档的权重衰减。
-//
-// ⚠️ **边界类降权而非禁止** (设计稿 §7.4:1126):
-// 边界是"别拿 X 开玩笑", 时间久了它会**淡**一些 —— 因为人也这样,
-// 而且永久禁止会让它越骂越畏缩, 那比复读更不像人。
-// 但它**永远不会掉到 0**: 降到 0.3 就不动了。
-func LongMemoryDecay(m Memory, now time.Time) float64 {
-	w := 1.0
-	if t, ok := parseMemTS(m.UpdatedTS); ok {
-		days := now.Sub(t).Hours() / 24
-		switch {
-		case days > 365:
-			w = 0.3
-		case days > 90:
-			w = 0.5
-		case days > 30:
-			w = 0.7
-		}
-	}
-	// 边界类额外保底: 它是"不能碰"的事, 降权只降**提及频率**, 不降**禁忌强度**。
-	if isBoundaryKind(m.Kind) && w < BoundaryDecayFloor {
-		w = BoundaryDecayFloor
-	}
-	return w
-}
-
-// parseMemTS 读记忆时间戳 (与全包同一套格式)。
-func parseMemTS(s string) (time.Time, bool) {
-	t, err := time.ParseInLocation(bodyTSLayout, strings.TrimSpace(s), time.Local)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return t, true
-}
-
 // ——— 第四档: 行为模式 → 写回日程表 ———
 
 // HabitSignal 一条从行为里抽出来的模式。
@@ -167,6 +135,22 @@ type HabitSignal struct {
 // ⚠️ 它**只产出建议**, 不直接改日程 —— 改作息是 §4.5.3 的事,
 // 那条路有自己的护栏 (单次 ≤30 分钟 / 累计 ≤2 小时每周 / 睡眠窗 ≥6 小时)。
 // 在这里直接改 = 绕过全部护栏。
+// HabitFromDeltas 与 `HabitFromMemories` **同一条判据**, 只是吃**抽取结果**。
+//
+// ⚠️ 为什么需要它: habit 档在**写入口**就被丢弃 (`ApplySessionDelta` 的 `DeriveTier`
+// switch —— 那里的注释写着"habit 档则要去改日程")。所以库里的记忆**永远不含** habit,
+// 消费方只能从 `SessionDelta.Memories` 那一条路上接。
+func HabitFromDeltas(ms []MemoryDelta, now time.Time) []HabitSignal {
+	if len(ms) == 0 {
+		return nil
+	}
+	conv := make([]Memory, 0, len(ms))
+	for _, m := range ms {
+		conv = append(conv, Memory{MemID: m.MemID, K: m.K, V: m.V, Label: m.Label, Kind: m.Kind})
+	}
+	return HabitFromMemories(conv, now)
+}
+
 func HabitFromMemories(ms []Memory, now time.Time) []HabitSignal {
 	lateNight := 0
 	for _, m := range ms {
@@ -192,6 +176,51 @@ func HabitFromMemories(ms []Memory, now time.Time) []HabitSignal {
 		})
 	}
 	return out
+}
+
+// applyHabitSignals 把行为模式**真的落到作息表与日程表上** (§4.5.3 的落点)。
+//
+// ⚠️ 与失眠那条路**共用同一套护栏**: `AdjustSleepPoint` 是唯一的写入口。
+// 两条路改的是同一个偏移量 —— 谁绕过护栏, 谁就把另一条的账算乱
+// (周额度、一天一次的闸门都是照着"只有一个写者"设计的)。
+//
+// ⚠️ **不改日程就不算落上**: 只写 `convo_sleeppoint` 的话, "一周后日程表悄悄变了"
+// 这件事根本没发生 (层 1 才是它几点睡对用户可见的那一面)。
+func (e *Engine) applyHabitSignals(sigs []HabitSignal) {
+	if e.Store == nil || len(sigs) == 0 {
+		return
+	}
+	day := clock.Today()
+	st, err := LoadSleepPoint(e.Store.DB, e.ownerKey(), day)
+	if err != nil {
+		// 读不到 → **不做** (失败往"照旧"倒): 在未知的作息上改偏移会漂。
+		log.Warn("convo:habit", "作息表读不到, 行为模式没落上: %v", err)
+		return
+	}
+	moved := false
+	for _, s := range sigs {
+		if s.SuggestMin == 0 {
+			continue
+		}
+		window := e.baseSleepWindowMin(st.OffsetMin)
+		next, aerr := AdjustSleepPoint(st, s.SuggestMin, window, s.Reason, day)
+		if aerr != nil {
+			// 护栏拦下不是错误: 一天一次 / 周额度用尽 / 窗口要短于 6 小时都在这里。
+			log.Info("convo:habit", "行为模式被护栏拦下: %v (%s, 证据 %d)", aerr, s.Key, s.Evidence)
+			continue
+		}
+		st = next
+		moved = true
+		log.Info("convo:habit", "§4.5.3 行为模式落上: %s (+%d 分钟, 证据 %d 次/%d 天)",
+			s.Key, s.SuggestMin, s.Evidence, s.WindowDays)
+		e.applySleepShiftToSchedule(s.SuggestMin, s.Reason)
+	}
+	if !moved {
+		return
+	}
+	if err := SaveSleepPoint(e.Store.DB, e.ownerKey(), day, st); err != nil {
+		log.Warn("convo:habit", "作息状态落库失败(日程已动, 两边可能对不上): %v", err)
+	}
 }
 
 // HabitMinEvidence 抽一条行为模式所需的最少观察次数。

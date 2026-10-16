@@ -137,6 +137,21 @@ func TestShareableSpark_ReadFailureSaysNo(t *testing.T) {
 	}
 }
 
+// TestSparkShareTopic_NoInterfaceNoSpark
+//
+// ⚠️ 条件③「与当前语境有接口」是这条路上**真的一关**: 灵光再好, 接不上当前语境就不抛。
+// 缺它的表现是它突然说一句「我前几天看到个事」, 而前文没有任何东西接得住。
+func TestSparkShareTopic_NoInterfaceNoSpark(t *testing.T) {
+	e := gateEngine(t)
+	if err := EnsureSparkSchema(e.Store.DB); err != nil {
+		t.Fatal(err)
+	}
+	seedSpark(t, e.Store, "会唱歌的电阻", "合成器", 0.9, "")
+	if _, _, ok := e.sparkShareTopic(time.Now(), "今天菜市场的茄子挺便宜"); ok {
+		t.Fatal("灵光的线索与当前语境毫无交集, 却抛了出来 —— 那正是「凭空抛出」")
+	}
+}
+
 // TestSparkShareTopic_IsTheProductionEntry
 //
 // ⚠️ **接线尺子**: 光测 ShareableSpark 证明不了它真的被接进那一轮。
@@ -145,11 +160,13 @@ func TestSparkShareTopic_IsTheProductionEntry(t *testing.T) {
 	if err := EnsureSparkSchema(e.Store.DB); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok := e.sparkShareTopic(time.Now()); ok {
+	// ⚠️ 条件③「与当前语境有接口」现在也在这条路上: 话题要**真的接得住**这条灵光。
+	// 传空话题会让它因为「没有接口」而不抛出 —— 那是另一条判据, 不是这个测试要测的。
+	if _, _, ok := e.sparkShareTopic(time.Now(), ""); ok {
 		t.Fatal("一条灵光都没有却说可以分享")
 	}
 	seedSpark(t, e.Store, "会唱歌的电阻", "合成器", 0.9, "")
-	topic, id, ok := e.sparkShareTopic(time.Now())
+	topic, id, ok := e.sparkShareTopic(time.Now(), "合成器")
 	if !ok || id <= 0 {
 		t.Fatalf("有温着的灵光却没挑出来: ok=%v id=%d", ok, id)
 	}

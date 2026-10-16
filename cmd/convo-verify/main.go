@@ -13,7 +13,7 @@ package main
 import (
 	"os"
 
-	"github.com/tzhnahida/VocabLock/internal/convo"
+	"github.com/tzhnahida/convo/internal/convo"
 )
 
 func main() {

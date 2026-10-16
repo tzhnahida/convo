@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // NowLine 给**所有**提示词用的时间锚。

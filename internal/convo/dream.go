@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §4.4.4 做梦 (夜间批的第 3 步) ———

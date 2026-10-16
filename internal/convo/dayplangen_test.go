@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // scriptChatter 按脚本逐次作答 (第 N 次调用返回 replies[N])。

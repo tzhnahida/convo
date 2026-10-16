@@ -69,6 +69,42 @@ func TestNoPromptHasSwallowedConcat(t *testing.T) {
 	}
 }
 
+// TestNoSegmentMentionsAnotherSegmentMarker
+//
+// ⚠️ 「**段 8(输出协议)里绝不许提段名**」是 dialog.go 自己立的规矩, 理由是:
+// 段名是**所有"这一段注入了没有"判断的判据** (测试 / 回归 / owner 查轨迹 / PromptStructureProblem)。
+// 在一个段的正文里写下另一个段的名字, 会让那些判断**一起失效**。
+//
+// ⚠️ 实测代价 (2026-10-16): 输出协议里那句「只有在【最近对话】里真有那件事时」——
+// 在**主动开场**那一轮 (没有历史 → 最近对话段根本不存在) 成了该段名**唯一**的出现点,
+// 于是 PromptStructureProblem 误报「【输出】协议被挪到了内容段「最近对话」之前」。
+// 这正是"段名判据全部失效"的现场: 检查器说的是真话, 坏的是提示词里的那个名字。
+//
+// 判据: 一个字符串**字面量**里出现两个以上不同的段位锚 = 违规。
+// (段位锚表见 promptMarkers —— 它的注释写着"改段标题就必须同步这里"。)
+func TestNoSegmentMentionsAnotherSegmentMarker(t *testing.T) {
+	for _, name := range []string{"dialog.go", "convo.go", "scene.go", "value.go"} {
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("读不到 %s: %v", name, err)
+		}
+		for _, lit := range stringLiterals(string(src)) {
+			seen := map[string]bool{}
+			var names []string
+			for _, m := range promptMarkers {
+				if strings.Contains(lit, m.Marker) && !seen[m.Name] {
+					seen[m.Name] = true
+					names = append(names, m.Name)
+				}
+			}
+			if len(names) > 1 {
+				t.Errorf("%s: 一个段的正文提到了别的段名 %v —— 段名是「这一段注入了没有」的判据, 提了它那些判断就失效; 正文尾: %q",
+					name, names, tailOf(lit))
+			}
+		}
+	}
+}
+
 func tailOf(s string) string {
 	r := []rune(s)
 	if len(r) > 60 {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— 模块 11: 梗学习 (§v2.4 设计) ———
@@ -216,6 +216,11 @@ func (s *Store) TouchSlangText(text string) {
 	}
 }
 
+// SlangByPhrase 按**原词精确**查一条 (与 `FindSlangHit` 的子串命中不同一件事)。
+//
+// ⚠️ 它是 `SlangAll` / `FindSlangHit` 之外的**第三种读视图**, 目前只有测试在用
+// (`slang_test.go` / `v241_test.go`) —— 与 `ImageFiles` 同一类:
+// "只有测试在用的公开视图"是棘轮的已知盲区, **不许当死代码删**。
 func (s *Store) SlangByPhrase(phrase string) (*Slang, error) {
 	row := s.DB.QueryRow(`SELECT id, phrase, meaning, example, COALESCE(source_quote,''),
 		source, state, confidence, use_count, COALESCE(last_used_ts,''),

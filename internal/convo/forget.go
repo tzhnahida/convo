@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -150,6 +150,45 @@ func (s *Store) ForgetSubject(uin string, at time.Time) (ForgetReport, error) {
 		n, _ := res.RowsAffected()
 		rep.Deleted[j.table] = int(n)
 		rep.Total += int(n)
+	}
+	// §7.5 **血缘 → 撤回**: 群公共层里由这个主体说的那些条也要删。
+	//
+	// ⚠️ 上面那条 convo_memory_scene 只按**私聊**场景键删; 而群公共层是
+	// **大家看得到**的那一侧 —— 遗忘权漏掉它 = 「删了私聊, 留下满群都在说的那句」。
+	//
+	// ⚠️ 逐条读血缘 (SceneMemoryOrigin) 而不是 WHERE origin_uin=?:
+	// 注入路径里根本没有 uin (scene.go 开头第 1 条), 血缘是**审计专用**的读数 ——
+	// 走审计口, 「谁能读它」就只剩一个入口。
+	// ⚠️ 代价: 每个群最多 200 条。遗忘权是人手触发的, 这条代价可以接受。
+	if rows, qerr := s.DB.Query(`SELECT scene_key FROM convo_scene WHERE kind = 'group'`); qerr == nil {
+		var sceneKeys []string
+		for rows.Next() {
+			var sk string
+			if rows.Scan(&sk) == nil && strings.TrimSpace(sk) != "" {
+				sceneKeys = append(sceneKeys, sk)
+			}
+		}
+		_ = rows.Close()
+		pulled := 0
+		for _, sk := range sceneKeys {
+			ms, merr := s.SceneMemories(sk, 200)
+			if merr != nil {
+				continue
+			}
+			for _, m := range ms {
+				if origin, oerr := s.SceneMemoryOrigin(m.MemID); oerr != nil || origin != u {
+					continue
+				}
+				if _, derr := s.DB.Exec(`DELETE FROM convo_memory_scene WHERE mem_id = ? AND scene_key = ?`, m.MemID, sk); derr == nil {
+					pulled++
+				}
+			}
+		}
+		if pulled > 0 {
+			rep.Deleted["convo_memory_scene(群公共层血缘)"] = pulled
+			rep.Total += pulled
+			log.Warn("convo:forget", "§7.5 群公共层按血缘撤回 %d 条 (origin_uin=%s)", pulled, u)
+		}
 	}
 	// ⚠️ **墓碑**: 没有它, 下一轮学回来 —— 而那正是「不可被逆转」要防的。
 	if _, err := s.DB.Exec("INSERT OR REPLACE INTO convo_forget (uin, ts) VALUES (?,?)", u, rep.Tombston); err != nil {

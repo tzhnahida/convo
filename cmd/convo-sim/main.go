@@ -23,10 +23,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/ai"
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/convo"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/ai"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/convo"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 const (
@@ -210,19 +210,21 @@ type chatCounter struct {
 	prefixSum, promptSum       int // 全部调用
 	dlgPrefixSum, dlgPromptSum int // 只统计"对话帧接对话帧" (本批要修的就是它)
 	nCalls, nDlgCalls          int
+
+	// §8.1 段序契约的违规计数 (三条写死的契约, 每条都有实测代价)。
+	//
+	// ⚠️ 此前 convo.PromptStructureProblem **零调用** —— 于是"【输出】协议绝不上移"
+	// 只写在注释里, 没有任何东西在**跑的时候**检查它。这里补上: 只查对话帧。
+	structBad int
+	structWhy string
 }
 
 // promptPrefixLen 两个 system 的公共前缀字节数 (缓存命中的就是这段)。
+// ⚠️ 2026-10-16: 这份实现原来是 convo.PromptDiff 的**重复** —— 而后者还带着
+// 段级差分 (moved/added/removed) 与"段序调整的唯一正当理由就是把这个数变大"的注释。
+// ⇒ 直接调它: 同一件事只留一份实现 (两处各写一份, 迟早分叉)。
 func promptPrefixLen(a, b string) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	i := 0
-	for i < n && a[i] == b[i] {
-		i++
-	}
-	return i
+	return convo.PromptDiff(a, b).CommonPrefix
 }
 
 // isDialogPrompt 对话帧的 system 一律以"最高原则"开头 (记忆提取/日程规划不是)。
@@ -240,6 +242,15 @@ func (c *chatCounter) Chat(ctx context.Context, system, user string) (string, er
 
 	// 前缀稳定度: 与上一次调用的公共前缀 / 本次 system 全长
 	dialog := isDialogPrompt(system)
+	// §8.1: 只查对话帧 —— 别的提示词 (记忆提取/日程规划) 不是这套段序, 查了是噪声。
+	if dialog {
+		if why := convo.PromptStructureProblem(system); why != "" {
+			c.structBad++
+			if c.structWhy == "" {
+				c.structWhy = why
+			}
+		}
+	}
 	if c.prevPrompt != "" {
 		p := promptPrefixLen(c.prevPrompt, system)
 		c.prefixSum += p
@@ -1055,6 +1066,13 @@ func main() {
 			countedAI.nCalls,
 			float64(countedAI.prefixSum)*100/float64(countedAI.promptSum),
 			countedAI.prefixSum, countedAI.promptSum)
+	}
+	// §8.1 段序契约: 违规**必须出声** —— 三条契约每一条都有实测代价
+	// (【输出】上移过一次: 前缀缓存 +19pt, 而帧失败率 37% → 75%)。
+	if countedAI.structBad > 0 {
+		report += fmt.Sprintf("- ⚠️ **段序契约违规 %d 次** (首例: %s)\n", countedAI.structBad, countedAI.structWhy)
+	} else {
+		report += "- 段序契约: 全部通过 (【输出】未上移 / 【时间】置尾 / 稳定段在轮换段之前)\n"
 	}
 	report += "\n"
 

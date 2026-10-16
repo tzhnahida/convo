@@ -3,8 +3,8 @@ package convo
 import (
 	"strings"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -163,6 +163,14 @@ func (e *Engine) conflictActNote(sceneKey string) (string, bool) {
 	}
 	frame, ok := ConflictActFrame(act, "", "")
 	if !ok {
+		return "", false
+	}
+	// ⚠️ **最后一道闸**: 指令里混进评理词就整条作废 —— 介入是例外, 例外的失败方向
+	// 是"不做" (§6.9)。这道闸此前**只有函数和测试、运行期零调用**(它在 knownUnwired 里),
+	// 于是"无评理词"这条约束实际上没人执行。
+	// ⚠️ 放在计数**之前**: 被丢掉的那一次不该吃掉当天的额度。
+	if !ConflictActFrameIsClean(frame) {
+		log.Warn("convo:engine", "§6.9 介入指令含评理词, 丢弃本次介入: %s", act)
 		return "", false
 	}
 	if _, err := e.Store.CounterInc("conflict_act", today); err != nil {

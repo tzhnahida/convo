@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // IngestImage 一张入站图片的统一处理: 判重 → 打标签(带缓存) → 决定要不要给它看。

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— 模块 6: 记忆 (§8.6) ———
@@ -226,9 +226,13 @@ func (s *Store) TopMemoriesFor(sceneKey string, limit int, now time.Time) ([]Mem
 
 // 提取输出 (LLM 会话结束帧)
 type MemoryDelta struct {
-	MemID       string  `json:"mem_id"`
-	Source      string  `json:"source"`
-	DueTS       string  `json:"due_ts"`
+	MemID  string `json:"mem_id"`
+	Source string `json:"source"`
+	DueTS  string `json:"due_ts"`
+	// Scope §7.5 双轨: 空/person = 关系层 (挂在场景里的人身上); scene = **群公共层**
+	// (convo_memory_scene, 没有 uin 列)。⚠️ 缺省 person: 群公共层是「所有人看得到」
+	// 的那一侧, 零值必须落在保守的一边。
+	Scope       string  `json:"scope"`
 	K           string  `json:"k"`
 	V           string  `json:"v"`
 	Label       string  `json:"label"`
@@ -247,6 +251,41 @@ type SessionDelta struct {
 	Summary  string        `json:"summary"`
 	Memories []MemoryDelta `json:"memories"`
 	Memes    []SlangDelta  `json:"memes"` // 模块 11: 用户说过的梗/口头禅
+
+	// ⚠️ 下面两个由**调用方**填, 不是模型输出 (json:"-")。
+	// 群公共层必须知道「是哪个群」与「谁先说的」(§7.5 血缘), 而抽取器看不见这两件事。
+	SceneKey  string `json:"-"`
+	OriginUIN string `json:"-"`
+}
+
+// SessionSceneOf 这一批消息里占多数的**群**场景 + 该场景第一条真人消息的 uin。
+//
+// ⚠️ 只认群场景: 私聊没有「大家」, 群公共层也就无从谈起。
+// ⚠️ 返回空串 = **不写**群公共层 (失败往「不写」倒 —— 公共层的错是「所有人看得到」)。
+func SessionSceneOf(msgs []MessageRecord) (sceneKey, originUIN string) {
+	counts := map[string]int{}
+	first := map[string]string{}
+	var order []string
+	for _, m := range msgs {
+		sk := strings.TrimSpace(m.SceneKey)
+		if SceneKindOf(sk) != SceneKindGroup {
+			continue
+		}
+		if _, seen := counts[sk]; !seen {
+			order = append(order, sk)
+		}
+		counts[sk]++
+		if _, ok := first[sk]; !ok && m.Dir == "user" && strings.TrimSpace(m.SenderUIN) != "" {
+			first[sk] = m.SenderUIN // 血缘: **谁先说的** (后续同 mem_id 的更新不改写它)
+		}
+	}
+	best, bestN := "", 0
+	for _, sk := range order {
+		if counts[sk] > bestN {
+			best, bestN = sk, counts[sk]
+		}
+	}
+	return best, first[best]
 }
 
 // ApplySessionDelta 会话结束处理: L2 摘要落库; L3 ≥0.7 直写, 否则 pending。
@@ -273,7 +312,35 @@ func (s *Store) ApplySessionDelta(sessionID string, d SessionDelta) error {
 		// "它记得你熬夜, 但作息一动不动" —— 那正是第四档要防的事。
 		switch DeriveTier(m) {
 		case TierForget, TierHabit:
-			noteTierDropped(DeriveTier(m))
+			tier := DeriveTier(m)
+			noteTierDropped(tier)
+			// ⚠️ 只记档位等于没说: forget 与 habit 是**两种完全不同的处置**
+			// (前者当天就丢, 后者要去改日程 §4.5.3), 而 TierReason 给的是人话归因。
+			// 它此前零调用 —— 于是"这条为什么没留下来"在日志里只剩一个字符串。
+			log.Info("convo:memory", "§4.4.3 这一条不进记忆表 (%s): %s", tier, TierReason(m))
+			continue
+		}
+		// §7.5 **双轨存储**: scope=scene 的记忆进**群公共层**, 不进人身上那一层。
+		//
+		// ⚠️ 两轨混在一起会让「群里大家共同知道的」变成某个人的私记 ——
+		// 而群公共层**没有 uin 列** (scene.go 开头第 1 条), 它天然不能被跨人转述。
+		// ⚠️ SaveSceneMemory 自己还会再过一遍私域词表, 返回 (false,nil) = **刻意丢弃**。
+		if strings.EqualFold(strings.TrimSpace(m.Scope), "scene") {
+			if strings.TrimSpace(d.SceneKey) == "" {
+				// 不知道是哪个群 → **不写**: 群公共层必须知道自己的场景。
+				continue
+			}
+			ok, serr := s.SaveSceneMemory(SceneMemory{
+				MemID: m.MemID, SceneKey: d.SceneKey,
+				K: m.K, V: m.V, Label: m.Label, Kind: m.Kind,
+				Confidence: m.Confidence, OriginUIN: d.OriginUIN,
+			})
+			if serr != nil {
+				return serr
+			}
+			if !ok {
+				log.Info("convo:memory", "§7.5 群公共层刻意丢弃 (命中私域词表): %s", m.MemID)
+			}
 			continue
 		}
 		if m.Confidence >= 0.7 {
@@ -501,7 +568,7 @@ func (s *Store) LastSessionSummary() (string, error) {
 const extractPrompt = `你是记忆提取器。阅读下面的对话, 提取值得长期记住的关系记忆、用户说过的梗、一句话会话摘要。
 
 输出单行 JSON:
-{"summary":"<20 字内会话提要>","memories":[{"mem_id":"<snake_case_id>","k":"<类别, 如 food/work/pet/plan/anniversary>","v":"<事实, 按 source 对应的视角陈述>","label":"<给用户看的短标签>","kind":"fact|preference|plan|relation","description":"<一句话说明它的价值>","source":"user_said|ai_said|observed|inferred","due_ts":"<kind=plan 时的兑现时间 YYYY-MM-DD HH:MM:SS, 否则空串>","confidence":0.0}],"memes":[{"phrase":"<原词>","meaning":"<一句话含义>","example":"<用户原话场景里的用法>","source_quote":"<用户原话, 几个词即可>","confidence":0.0}]}
+{"summary":"<20 字内会话提要>","memories":[{"mem_id":"<snake_case_id>","k":"<类别, 如 food/work/pet/plan/anniversary>","v":"<事实, 按 source 对应的视角陈述>","label":"<给用户看的短标签>","kind":"fact|preference|plan|relation","description":"<一句话说明它的价值>","source":"user_said|ai_said|observed|inferred","due_ts":"<kind=plan 时的兑现时间 YYYY-MM-DD HH:MM:SS, 否则空串>","confidence":0.0,"scope":"person|scene"}],"memes":[{"phrase":"<原词>","meaning":"<一句话含义>","example":"<用户原话场景里的用法>","source_quote":"<用户原话, 几个词即可>","confidence":0.0}]}
 
 规则:
 - 只提取**长期有价值**的事实 (用户的喜好/计划/重要事件/你们的梗), 不要提取闲聊细节。
@@ -515,6 +582,11 @@ const extractPrompt = `你是记忆提取器。阅读下面的对话, 提取值�
 - kind=plan 的条目**必须**给 due_ts (兑现时间); 到期未兑现会被结案, 不再提起。
 - 每段对话最多 4 条 memories; 没有值得记的 → "memories":[]。
 - confidence: 用户明确说过=0.9+, 你在对话中推断=0.6, 猜的=0.4。
+- **scope 只判一件事**: 这条是「关于某一个人的」还是「这个群大家共同的」——
+  · person (**缺省**) = ta 的事 (喜好/计划/重要事件/你俩的梗) —— 绝大多数都是它;
+  · scene  = **群里大家共同的** (群里的约定/共同的梗/一起经历过的事), 且**不是任何一个人的私事**;
+  · ⚠️ 拿不准就写 person —— scene 会进**群公共层**、被群里所有人看到, 写错等于把私事挂上公共墙。
+- **只有群聊里才可能有 scope=scene**; 私聊一律 person。
 - 之前已经澄清/求证过的 (按下面需求说明) 不要重复。
 
 memes 规则 (用户说过的梗/网络用语/口头禅):

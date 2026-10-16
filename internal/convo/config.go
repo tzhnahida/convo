@@ -51,11 +51,10 @@ type ChannelConfig struct {
 	// server = 反向 WS (桥接方连进来); client = 正向 WS (我们连出去)。
 	WSMode string `yaml:"ws_mode"`
 	// WSURL client 模式要连的地址, 例: ws://127.0.0.1:3102/ws
-	WSURL         string `yaml:"ws_url"` // our reverse-WS endpoint for events, e.g. 127.0.0.1:8421
-	AccessToken   string `yaml:"access_token"`
-	OwnerQQ       string `yaml:"owner_qq"` // 用户的 QQ 号 — 消息裁决只对它生效 (empty → 仅记录)
-	SelfQQ        string `yaml:"self_qq"`  // 小夜自己的 QQ 号 (登录后从 get_login_info 回填)
-	LinkSignature bool   `yaml:"link_signature"`
+	WSURL       string `yaml:"ws_url"` // our reverse-WS endpoint for events, e.g. 127.0.0.1:8421
+	AccessToken string `yaml:"access_token"`
+	OwnerQQ     string `yaml:"owner_qq"` // 用户的 QQ 号 — 消息裁决只对它生效 (empty → 仅记录)
+	SelfQQ      string `yaml:"self_qq"`  // 小夜自己的 QQ 号 (登录后从 get_login_info 回填)
 }
 
 type SchedulerConfig struct {
@@ -76,6 +75,13 @@ type SchedulerConfig struct {
 	OpenJitterPct      int     `yaml:"open_jitter_pct"`
 	// §6.7 热力: 每条**主动**消息的代价。<=0 → 内置 25 (HeatQuota 内部兜底, 不是免费)
 	HeatCostPerMsg float64 `yaml:"heat_cost_per_msg"` // default 25 — 每条**主动**消息扣多少热力 (§6.7)
+
+	// §3.6 事件池生成预算。零值 → 内置默认 (eventgen.go 的 withDefaults 是**唯一**解释它的地方)。
+	// ⚠️ 这三项此前**没有任何入口**: SetEventGenBudget 零调用, 于是"预算"永远是内置默认值 ——
+	// 想改一次调用数就得改代码重编译。
+	EventGenCallsPerDay  int `yaml:"event_gen_calls_per_day"` // default 3
+	EventGenCandidates   int `yaml:"event_gen_candidates"`    // default 5 (硬上限 8)
+	EventGenLookbackDays int `yaml:"event_gen_lookback_days"` // default 3
 }
 
 type StickerConfig struct {
@@ -101,10 +107,9 @@ func DefaultConfig() Config {
 			Model:   "deepseek-chat",
 		},
 		Channel: ChannelConfig{
-			Driver:        "noop",
-			APIBase:       "http://127.0.0.1:3001",
-			WSListen:      "127.0.0.1:8421",
-			LinkSignature: true,
+			Driver:   "noop",
+			APIBase:  "http://127.0.0.1:3001",
+			WSListen: "127.0.0.1:8421",
 		},
 		Sched: SchedulerConfig{
 			TickEverySec:       60,
@@ -120,6 +125,10 @@ func DefaultConfig() Config {
 			NoInputMaxDay:      1,
 			OpenMinGapMin:      240,
 			OpenJitterPct:      10,
+			// 事件池预算: 默认值**引用 eventgen.go 的常量**, 不另抄一份 (抄了必然分叉)。
+			EventGenCallsPerDay:  EventGenDefaultCallsPerDay,
+			EventGenCandidates:   EventGenDefaultCandidates,
+			EventGenLookbackDays: EventGenDefaultLookback,
 		},
 		Stickers: StickerConfig{
 			SearchDriver:  "builtin",
@@ -139,6 +148,11 @@ func DefaultConfig() Config {
 // never commit real keys).
 func Load(path string) (Config, error) {
 	cfg := DefaultConfig()
+	// §6.10 群配置**先铺底再 overlay** —— `DefaultGroupConfig()` 存在的理由就是这一行。
+	// ⚠️ 在它之前那个函数是**零调用**的 (它的注释写着"先铺底", 而没有人在铺):
+	// 于是一旦 DefaultGroupConfig 里加了新的非零默认, 它不会生效 —— 而看起来一切正常。
+	// ⚠️ 数值项的兜底仍然在 overlay **之后** (见下面 NormalizeGroupConfig 那段)。
+	cfg.Group = DefaultGroupConfig()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

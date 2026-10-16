@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -80,22 +80,43 @@ func castStatusPrompt(p *PersonaProfile, b WorldBible, envLine string) string {
 	sb.WriteString("\n写**他们今天各自在干什么**。这是给你自己用的日常素材 —— ")
 	sb.WriteString("别人问你今天怎么样, 你要答的就是这些具体的事。\n\n")
 	sb.WriteString("严格输出单行 JSON 数组, **一个人一条, 一个都不能少**:\n")
-	sb.WriteString("[{\"name\":\"名字\",\"status\":\"今天在干什么\"}]\n\n")
+	sb.WriteString("[{\"name\":\"名字\",\"status\":\"今天在干什么\",\"left\":\"\"}]\n\n")
 	sb.WriteString("硬性要求:\n")
 	sb.WriteString("① 每条 **10-25 字**, 要**具体到能接着说下一句** —— ")
 	sb.WriteString("「在忙工作」不合格, 「在三号仓库盘货, 手都冻僵了」合格;\n")
 	sb.WriteString("② 要和你那边的天气/时节**对得上** (下暴雨就别让人都在外面跑);\n")
 	sb.WriteString("③ 写法是**日常琐事**, 不要大事件、不要战斗、不要戏剧化;\n")
 	sb.WriteString("④ 不要写你, 只写他们;\n")
-	sb.WriteString("⑤ 不许写成恋人/暧昧关系, 不许涉及未成年, 不许有伤害内容。")
+	sb.WriteString("⑤ 不许写成恋人/暧昧关系, 不许涉及未成年, 不许有伤害内容;\n")
+	// §3.6.5c 「明确退出」的**信号源**就是这个键 —— 没有它, 退出只剩自然沉降那一条,
+	// 而「他搬家了」的角色会一直留在当下生活层里 (一年后她有 40 个还在原地等她的旧人)。
+	sb.WriteString("⑥ `left` **默认留空**。只有当这个人的人生**真的翻篇了** (搬家/离职/店关门/关系断了) ")
+	sb.WriteString("才填一句理由 —— 填了就等于**他退出你的日常生活**: 从此只能被回忆提起, ")
+	sb.WriteString("不能再若无其事地出现, 也**不许反悔**。")
 	return sb.String()
+}
+
+// CastStatusUpdate 一个人的一条日程更新。
+//
+// ⚠️ `Left` 只在**他叙述了结局**时非空 (§3.6.5c「明确退出」) —— 空 = 他还在当下生活里。
+type CastStatusUpdate struct {
+	Status string
+	Left   string
+}
+
+// clampCastRunes 按**字符**截断 —— 按字节切会把汉字切坏, 而那是要进提示词的。
+func clampCastRunes(s string) string {
+	if len([]rune(s)) > CastStatusMaxRunes {
+		return string([]rune(s)[:CastStatusMaxRunes])
+	}
+	return s
 }
 
 // ParseCastStatus 解析 → name → status。
 //
 // ⚠️ 键按**名字**而不是下标: 模型偶尔会调换顺序或漏人,
 // 按下标合并会把张三的日程安到李四头上 —— 而那是**静默的**, 看不出来。
-func ParseCastStatus(raw string) (map[string]string, bool) {
+func ParseCastStatus(raw string) (map[string]CastStatusUpdate, bool) {
 	// ⚠️ **必须用数组版抽取器** —— 对象版从第一个 `{` 扫描,
 	// 遇到顶层数组只会返回第一个元素, 而那是合法 JSON, 不报错。
 	// 后果是"只刷新了一个人", 静静地少一半人 (见 extractJSONArray 的注释)。
@@ -106,6 +127,7 @@ func ParseCastStatus(raw string) (map[string]string, bool) {
 	var arr []struct {
 		Name   string `json:"name"`
 		Status string `json:"status"`
+		Left   string `json:"left"`
 	}
 	if err := json.Unmarshal(b, &arr); err != nil {
 		// 有的模型会回 {"cast":[...]} —— 认一下, 不认就失败。
@@ -113,6 +135,7 @@ func ParseCastStatus(raw string) (map[string]string, bool) {
 			Cast []struct {
 				Name   string `json:"name"`
 				Status string `json:"status"`
+				Left   string `json:"left"`
 			} `json:"cast"`
 		}
 		if err2 := json.Unmarshal(b, &wrap); err2 != nil || len(wrap.Cast) == 0 {
@@ -123,17 +146,15 @@ func ParseCastStatus(raw string) (map[string]string, bool) {
 	if len(arr) == 0 {
 		return nil, false
 	}
-	out := make(map[string]string, len(arr))
+	out := make(map[string]CastStatusUpdate, len(arr))
 	for _, it := range arr {
 		n := strings.TrimSpace(it.Name)
 		s := strings.TrimSpace(it.Status)
 		if n == "" || s == "" {
 			continue
 		}
-		if len([]rune(s)) > CastStatusMaxRunes {
-			s = string([]rune(s)[:CastStatusMaxRunes])
-		}
-		out[n] = s
+		s = clampCastRunes(s)
+		out[n] = CastStatusUpdate{Status: s, Left: clampCastRunes(strings.TrimSpace(it.Left))}
 	}
 	if len(out) == 0 {
 		return nil, false
@@ -146,11 +167,23 @@ func ParseCastStatus(raw string) (map[string]string, bool) {
 // ⚠️ 没被命中的**保留旧状态、也保留旧的 StatusDay** —— 于是明天它还会
 // 被算作 stale, 再试一次。把没更新的人也标成"今天已更新"的话,
 // 一次模型抽风就会让那个人**永久停在旧日程上**, 而且没人会发现。
-func ApplyCastStatus(b WorldBible, updates map[string]string, day string) WorldBible {
+func ApplyCastStatus(b WorldBible, updates map[string]CastStatusUpdate, day string) WorldBible {
 	for i := range b.Cast {
-		if s, ok := updates[b.Cast[i].Name]; ok {
-			b.Cast[i].Status = s
+		u, ok := updates[b.Cast[i].Name]
+		if !ok {
+			continue
+		}
+		if u.Status != "" {
+			b.Cast[i].Status = u.Status
 			b.Cast[i].StatusDay = day
+		}
+		// §3.6.5c **明确退出**: 模型在叙述里给这个人写了结局 (「搬家了」)。
+		//
+		// ⚠️ 这就是 RetireCastMember 的生产者 —— 没有它, 退出只剩「60 天没被提起」
+		// 那一条自然沉降, 而「他搬家了」的角色会一直留在当下生活层里。
+		// ⚠️ 理由为空**不退出**: 没有理由的退出与「忘了这个人」长得一模一样。
+		if u.Left != "" && RetireCastMember(&b, b.Cast[i].Name, u.Left, clock.Now()) {
+			log.Info("convo:cast", "§3.6.5c %s 叙述了结局 (%s) —— 转入「过去的人」", b.Cast[i].Name, u.Left)
 		}
 	}
 	return b

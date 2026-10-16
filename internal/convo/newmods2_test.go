@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ── §5.1 三个量 ───────────────────────────────────────────
@@ -271,16 +271,10 @@ func TestTaste_TooFewSamplesIsNotATaste(t *testing.T) {
 	if _, ok := TasteOf(hits, "猫"); ok {
 		t.Fatal("a hot streak of 2 must not become a taste")
 	}
-	if _, ok := TasteCounts(hits, "猫"); ok {
-		t.Fatal("TasteCounts must respect the sample floor too")
-	}
 	hits[0].Seen = 10
 	hits[0].Spoke = 6
 	if r, ok := TasteOf(hits, "猫"); !ok || r != 0.6 {
 		t.Fatalf("want 0.6, got %v ok=%v", r, ok)
-	}
-	if _, ok := TasteCounts(hits, "狗"); ok {
-		t.Fatal("an unknown topic has no taste")
 	}
 	if _, ok := TasteOf(hits, "猫不理"); ok {
 		t.Fatal("topic must match exactly, not by prefix")
@@ -324,17 +318,17 @@ func TestLastSceneMessageAt_IgnoresAItoAI(t *testing.T) {
 	if _, err := s.DB.Exec(ins, recent, "in", "group", "text", "{}", "ai_to_ai", "group:1", "0"); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := LastSceneMessageAt(s.DB, "group:1")
+	got, ok, err := LastSceneMessageAtExcluding(s.DB, "group:1", "不是这条", time.Now())
 	if err != nil || !ok {
 		t.Fatalf("want a hit, got ok=%v err=%v", ok, err)
 	}
 	if time.Since(got) < time.Hour {
 		t.Fatal("the ai_to_ai row must not reset the cold clock")
 	}
-	if _, ok, _ := LastSceneMessageAt(s.DB, "group:999"); ok {
+	if _, ok, _ := LastSceneMessageAtExcluding(s.DB, "group:999", "不是这条", time.Now()); ok {
 		t.Fatal("an unknown scene must report no history")
 	}
-	if _, ok, _ := LastSceneMessageAt(s.DB, ""); ok {
+	if _, ok, _ := LastSceneMessageAtExcluding(s.DB, "", "不是这条", time.Now()); ok {
 		t.Fatal("an empty scene key must report no history, not the global last message")
 	}
 }

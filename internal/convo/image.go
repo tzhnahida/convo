@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -128,32 +128,6 @@ func (s *Store) SetImageTag(owner, md5, tag string) error {
 	}
 	_, err := s.DB.Exec("UPDATE convo_image SET tag = ? WHERE owner = ? AND md5 = ?", tag, owner, m)
 	return err
-}
-
-// ImageSeen 这张图见过几次 (0 = 没见过)。
-func (s *Store) ImageSeen(owner, md5 string) int {
-	m := strings.ToLower(strings.TrimSpace(md5))
-	if m == "" {
-		return 0
-	}
-	var n int
-	if err := s.DB.QueryRow("SELECT seen_n FROM convo_image WHERE owner = ? AND md5 = ?", owner, m).Scan(&n); err != nil {
-		return 0
-	}
-	return n
-}
-
-// ImageIsSticker 这张图算不算表情包 (重复度够高)。
-func ImageIsSticker(seen int) bool { return seen >= ImageStickerRepeats }
-
-// ImageMark 这张图在上下文里该显示成什么。
-//
-// ⚠️ 表情包**降级成一个词, 不是删掉** —— "有人发了张表情"也是一件事。
-func ImageMark(seen int) string {
-	if ImageIsSticker(seen) {
-		return ImageStickerMark
-	}
-	return ImagePhotoMark
 }
 
 // ImageRow 图片表里的一行 (回溯用)。

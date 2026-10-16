@@ -168,24 +168,6 @@ func SaveFold(db *sql.DB, owner, sceneKey, day string, r FoldResult) (bool, erro
 	return n > 0, nil
 }
 
-// LoadFold 读回某天的折叠（补算昨日记忆时用）。
-func LoadFold(db *sql.DB, owner, sceneKey, day string) (FoldResult, bool, error) {
-	var r FoldResult
-	var topics string
-	row := db.QueryRow("SELECT total, speakers, topics, text FROM convo_fold "+
-		"WHERE owner = ? AND scene_key = ? AND day = ?", owner, sceneKey, day)
-	if err := row.Scan(&r.Total, &r.Speakers, &topics, &r.Text); err != nil {
-		if err == sql.ErrNoRows {
-			return r, false, nil
-		}
-		return r, false, err
-	}
-	if topics != "" {
-		r.Topics = strings.Split(topics, ",")
-	}
-	return r, true, nil
-}
-
 // ParseDay 把 "2006-01-02" 解析成当地零点。
 func ParseDay(day string) (time.Time, bool) {
 	t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(day), time.Local)

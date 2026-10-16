@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // EnvDay 是"它那边"的当天环境: 天气 / 温度 / 生活事件(地震、台风、花粉…)。

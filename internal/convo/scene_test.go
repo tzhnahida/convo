@@ -1,7 +1,7 @@
 package convo
 
 import (
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 	"strings"
 	"testing"
 	"time"

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 var hmRE = regexp.MustCompile(`\d{1,2}[:：]\d{2}`)

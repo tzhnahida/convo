@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tzhnahida/VocabLock/internal/ai"
+	"github.com/tzhnahida/convo/internal/ai"
 )
 
 // fakeToolChatter 按脚本依次返回; 记录它收到了什么。

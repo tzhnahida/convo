@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────

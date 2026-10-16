@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— 时间格式: 这条是本批最要紧的**回归尺子** ———
@@ -33,7 +33,7 @@ func TestLastSceneMessageAt_ReadsRealInsertedRows(t *testing.T) {
 		MsgMeta{Origin: OriginUser, SceneKey: "group:77", SenderUIN: "11"}); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := LastSceneMessageAt(e.Store.DB, "group:77")
+	got, ok, err := LastSceneMessageAtExcluding(e.Store.DB, "group:77", "不是这条", time.Now())
 	if err != nil || !ok {
 		t.Fatalf("真实写入的行读不回来 (ok=%v err=%v) —— 时间格式不一致", ok, err)
 	}
@@ -62,26 +62,37 @@ func TestNightBatch_FoldsGroupDayIntoOneMemory(t *testing.T) {
 		}
 	}
 	e.prepareDailyJobs(at)
-	res, ok, err := LoadFold(e.Store.DB, e.ownerKey(), "group:88", night)
-	if err != nil || !ok {
-		t.Fatalf("日终折叠没有落库: ok=%v err=%v", ok, err)
+	// ⚠️ 直接读库: `LoadFold` 已删 (见 newmods_test.go 的说明)。
+	var foldTotal int
+	var foldTopics, foldText string
+	if err := e.Store.DB.QueryRow("SELECT total, topics, text FROM convo_fold WHERE owner=? AND scene_key=? AND day=?",
+		e.ownerKey(), "group:88", night).Scan(&foldTotal, &foldTopics, &foldText); err != nil {
+		t.Fatalf("日终折叠没有落库: %v", err)
 	}
+	res := FoldResult{Total: foldTotal, Text: foldText}
 	if res.Total != 4 {
 		t.Fatalf("应当折进 4 条, 实际 %d", res.Total)
 	}
-	if len(res.Topics) == 0 {
+	if foldTopics == "" {
 		t.Fatal("自带话题抽取没抽到任何话题")
 	}
 	// 折出来的一条必须进记忆, 以 ai_to_ai 落库 (L1 会把它过滤掉)。
-	if _, ok, _ := LastSceneMessageAt(e.Store.DB, "group:88"); !ok {
+	if _, ok, _ := LastSceneMessageAtExcluding(e.Store.DB, "group:88", "不是这条", time.Now()); !ok {
 		t.Fatal("折叠结果没有以消息形式落库")
 	}
 	// 幂等: 再跑一遍不许改 (夜间批重跑是常态)。
 	e.Store.DB.Exec("DELETE FROM convo_counters WHERE name = ?", "night_batch")
 	e.prepareDailyJobs(at)
-	again, _, _ := LoadFold(e.Store.DB, e.ownerKey(), "group:88", night)
-	if again.Text != res.Text {
-		t.Fatalf("重跑改了折叠结果:\n%q\n%q", res.Text, again.Text)
+	// ⚠️ 直接读库: `LoadFold` 于 2026-10-16 删除 —— 折叠写完就**就地**注入
+	// (convo.go 那一块用的是刚算出来的 res), 全库没有"事后读回"的消费者。
+	// 而这条断言要的只是"库里那一行没被重跑改掉", 一条 SELECT 就够。
+	var keptText string
+	if err := e.Store.DB.QueryRow("SELECT text FROM convo_fold WHERE owner=? AND scene_key=? AND day=?",
+		e.ownerKey(), "group:88", night).Scan(&keptText); err != nil {
+		t.Fatalf("折叠行读不回来: %v", err)
+	}
+	if keptText != res.Text {
+		t.Fatalf("重跑改了折叠结果:\n%q\n%q", res.Text, keptText)
 	}
 }
 

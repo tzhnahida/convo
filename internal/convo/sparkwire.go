@@ -3,8 +3,8 @@ package convo
 import (
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -87,12 +87,21 @@ func (s *Store) ShareableSpark(now time.Time) (Spark, bool) {
 // sparkShareTopic 把一条可分享的灵光变成**这一轮的话题** (§2.6 的唯一落点: 段 7.3)。
 //
 // 返回的第二个值是它的 id —— 调用方在**真的发出去之后**要用它记 `said_ts`。
-func (e *Engine) sparkShareTopic(now time.Time) (Topic, int64, bool) {
+func (e *Engine) sparkShareTopic(now time.Time, topicText string) (Topic, int64, bool) {
 	if e.Store == nil {
 		return Topic{}, 0, false
 	}
 	sp, ok := e.Store.ShareableSpark(now)
 	if !ok {
+		return Topic{}, 0, false
+	}
+	// §2.6 条件③「与当前语境有接口」: **灵光不能凭空抛出**。
+	//
+	// ⚠️ 判据的输入是**这一轮真的在聊的东西** (最近几句 + 本轮话题), 而不是
+	// 「这条灵光本身好不好」—— 后者 SparkStatusAt 已经判过了 (档位 fresh/warm 才走到这里)。
+	// 缺这一关的表现是: 它突然说一句「我前几天看到个事」, 而前文没有任何东西接得住它。
+	if hist := e.recentDialogIn(DefaultSceneKey, 6); !SparkHasInterface(sp, hist, topicText) {
+		log.Info("convo:spark", "§2.6 这条灵光与当前语境没有接口 —— 这一轮不抛出")
 		return Topic{}, 0, false
 	}
 	line, ok := SparkLine(sp)

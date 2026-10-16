@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— P1 缓存债的契约回归 ———

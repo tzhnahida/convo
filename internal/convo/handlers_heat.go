@@ -52,6 +52,9 @@ func (s *Server) routeHeat(w http.ResponseWriter, r *http.Request) {
 			"before":  r.Before,
 			"after":   r.After,
 			"seq":     r.Seq,
+			// slot_state 是"delta 为什么是 0"的直接答案: focus 的权重显式为 0,
+			// sleep 根本不在 GainByState 里 (2026-10-16 加, 见 heat.go 的 HeatSettle)。
+			"slot_state": r.SlotState,
 		})
 	}
 	out["log"] = log

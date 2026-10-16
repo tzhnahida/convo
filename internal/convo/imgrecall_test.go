@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ⚠️ **本批的头号契约** (2026-10-14 用户实测):

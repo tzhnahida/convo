@@ -1,12 +1,14 @@
 package convo
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -590,6 +592,74 @@ func (s *Store) SaveInterruption(i Interruption) error {
 
 // ClearInterruption 清掉中断 (恢复完 / 该话题结束)。**只动自己这张表** ——
 // 它必须留下 `pending_reply_due` 那条 meta, 否则就等于绕道复用了单槽 (C2)。
+// ——— §4.3 中断-恢复的**生产者** ———
+//
+// ⚠️ 这条路的消费者一直在: DueAt → tick 的 ActResume → 十分钟后「接着说」
+// (dialog.go 的 ActResume 段甚至把「别解释你去了哪」写死在提示里)。
+// 而**生产者从来没有过** —— SaveInterruption 零调用 ⇒ suspended 态一次都没发生过,
+// 那句「等下 我拿个外卖」从来没有被说出来过。
+//
+// 设计稿 §4.3 L764: 「允许『等下 我拿个外卖』→ 十分钟后回来**接着说**」——
+// 所以它是一次**对话中的动作**: 挂在她刚说完一句之后。
+const (
+	// InterruptPct 一句说完之后「被现实叫走」的概率 (%)。低 —— 真人一天也就一两次。
+	InterruptPct = 25
+	// InterruptMinGapMin 两次挂起之间的最小间隔 (分钟): 240 = 一天最多几次。
+	InterruptMinGapMin = 240
+	// InterruptDueMin/Max 挂起时长 (分钟)。太短不像去办事, 太久就是失联。
+	InterruptDueMin = 5
+	InterruptDueMax = 15
+)
+
+// interruptReasons 她会说的那句「我去忙一下」。
+//
+// ⚠️ **只说不解释** (与 ActResume 段的提示同一条纪律): 这句话是**说给用户听的**,
+// 不进提示词当素材 —— 让模型知道「我刚才去拿外卖了」, 它回来就会解释自己去了哪,
+// 而真人回来是不解释的。
+var interruptReasons = []string{
+	"等下 我拿个外卖",
+	"等我一下 水开了",
+	"稍等 快递到楼下了",
+	"我去楼下取个东西 马上回来",
+}
+
+// maybeSuspend 掷一次「要不要挂起」—— 中了就存一条中断, 并**把那句话说出来**。
+//
+// 零值口径 (与模块头一致): 睡觉中 / 已经挂起中 / 冷却内 / 掷不中 → **不挂起** (走正常路径)。
+func (e *Engine) maybeSuspend(ctx context.Context, now time.Time) {
+	if e.Store == nil {
+		return
+	}
+	if e.currentState() == StateSleep {
+		return // 睡觉中不存在「我去忙一下」
+	}
+	if _, ok, _ := e.Store.LoadInterruption(); ok {
+		return // 已经挂起中 —— 同一条中断不许叠
+	}
+	if !e.hookClaim("interrupt", InterruptMinGapMin, clock.Today()) {
+		return
+	}
+	if Dice(100) >= InterruptPct {
+		return
+	}
+	reason := interruptReasons[Dice(len(interruptReasons))]
+	due := now.Add(time.Duration(InterruptDueMin+Dice(InterruptDueMax-InterruptDueMin+1)) * time.Minute)
+	if err := e.Store.SaveInterruption(Interruption{
+		AnchorTS: now.Format(fatigueTSLayout),
+		Reason:   reason,
+		DueTS:    due.Format(fatigueTSLayout),
+	}); err != nil {
+		log.Warn("convo:suspend", "挂起落库失败(这一轮照常说话): %v", err)
+		return
+	}
+	// 说出来 —— 不然「挂起」对她和用户都是不可见的。
+	// ⚠️ 走 sendFrame: 入库/节奏/记账与别的句子同一条路, 不另开旁路。
+	if err := e.sendFrame(ctx, OutputFrame{Reply: []FrameItem{{Kind: "text", Text: reason}}}); err != nil {
+		log.Warn("convo:suspend", "挂起那句话没发出去: %v", err)
+	}
+	log.Info("convo:suspend", "§4.3 挂起: %q —— %s 后接着说", reason, due.Format("15:04"))
+}
+
 func (s *Store) ClearInterruption() error {
 	_, err := s.DB.Exec(`DELETE FROM convo_interruption WHERE id=1`)
 	return err

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §4.5 周日程: 看 / 重生成 ———

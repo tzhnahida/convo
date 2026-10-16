@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tzhnahida/VocabLock/internal/convo"
+	"github.com/tzhnahida/convo/internal/convo"
 )
 
 func main() {

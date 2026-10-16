@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— v2.4.1 拟人升级包 ———

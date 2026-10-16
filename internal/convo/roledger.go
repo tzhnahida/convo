@@ -2,10 +2,11 @@ package convo
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -119,6 +120,24 @@ func DeriveRole(st RoleStats, seed GroupRole) GroupRole {
 		return GroupRoleLurker // 说了没人接 → 也是潜水 (它自己会收敛)
 	}
 	return GroupRoleFoiler // 说、也有人接, 但不多 → 捧哏
+}
+
+// GroupRoleOfStore 与 Engine.RoleOf **同一条判据**, 但只依赖 Store ——
+// 给没有引擎实例的读数面用 (观察台/管理页)。顺序逐字一致: 账本处出来的优先, 没有就用种子。
+func GroupRoleOfStore(s *Store, sceneKey string) GroupRole {
+	if s == nil || strings.TrimSpace(sceneKey) == "" {
+		return GroupRoleNone
+	}
+	p, err := s.LoadProfile()
+	if err != nil || p == nil {
+		return GroupRoleNone
+	}
+	seed := AssignGroupRole(p.Name, sceneKey)
+	st, ok, err := s.LoadRoleStats(s.OwnerKey(), sceneKey)
+	if err != nil || !ok {
+		return seed
+	}
+	return DeriveRole(st, seed)
 }
 
 // RoleOf 它在**这个群**里的位: 处出来的优先, 没处出来就用种子。

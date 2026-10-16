@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— OneBot v11 通道 (NapCat) ———
@@ -31,7 +31,7 @@ type OneBotClient struct {
 	accessToken string
 	http        *http.Client
 	selfQQ      int64  // 登录信息回填 (小夜自己的 QQ)
-	selfName    string // 登录信息回填 (昵称; set_qq_profile 必带)
+	selfName    string // 登录信息回填 (昵称)
 }
 
 func NewOneBotClient(apiBase, accessToken string) *OneBotClient {
@@ -254,6 +254,15 @@ func (e OneBotEvent) ImageRefs() []ImageRef {
 	return out
 }
 
+// ImageFiles 事件里的图片路径 (url 优先, 否则 file/path)。
+//
+// ⚠️ 它是 `ImageRefs` 的**简化视图**: 生产一律走 `ImageRefs`(要 md5 —— 判重与
+// 照片/表情包分流都靠它), 而**测试**用它钉"字段优先级"这条纯解析规则。
+//
+// ⚠️ 2026-10-16 记录在案: 它一度被当成"零生产调用者的死代码"删掉, 而
+// `imagefiles_test.go` **整个文件**都在测它。那一类"只有测试在用的公开视图"
+// 是棘轮的已知盲区 (同类的还有 `Unwrap` 这类接口方法)。⇒ 已还原, 并留在
+// `knownUnwired` 里**附理由**, 而不是删掉。
 func (e OneBotEvent) ImageFiles() []string {
 	var out []string
 	for _, r := range e.ImageRefs() {
@@ -451,50 +460,4 @@ func (c *OneBotClient) LoginInfo() (userID int64, nickname string, err error) {
 	}
 	c.selfName = d.Nickname
 	return d.UserID, d.Nickname, nil
-}
-
-// SetSignature 状态→签名联动 (拟人名片).
-//
-// ⚠️ 2026-09-06 Pi 实测定案: set_self_profile 在 NapCat 4.15/4.18 均报
-// "不支持的Api"; 正确接口为 set_qq_profile — **必须带 nickname 字段**,
-// 签名走 personal_note (实测 ok/result=0)。
-func (c *OneBotClient) SetSignature(sig string) error {
-	if c.selfName == "" {
-		// 自举顺序防御: 签名先于登录信息时自动补; 拿不到名字 → 跳过本次 (避免 400)
-		if _, name, err := c.LoginInfo(); err == nil {
-			c.selfName = name
-		}
-	}
-	if c.selfName == "" {
-		log.Warn("convo:channel", "set_qq_profile skipped: nickname 未知 (get_login_info 未成功)")
-		return fmt.Errorf("nickname unknown")
-	}
-	err := c.call("set_qq_profile", map[string]interface{}{
-		"nickname":      c.selfName,
-		"personal_note": sig,
-	}, nil)
-	if err != nil {
-		return fmt.Errorf("set_qq_profile (须带 nickname/签名=personal_note): %w", err)
-	}
-	return nil
-}
-
-// SigByState 状态→QQ 签名的默认映射 (§8.3 五档)。
-var SigByState = map[string]string{
-	StateSleep: "睡了 zZ",
-	StateFocus: "闭关中，勿扰",
-	StateBusy:  "赶工中……",
-	StateSlack: "摸鱼中",
-	StateFree:  "在的",
-}
-
-// LinkSignatureAndName 在状态切换时联动签名 (信道弱化处理: 失败仅降级)。
-func (c *OneBotClient) LinkSignature(state string) {
-	sig, ok := SigByState[state]
-	if !ok {
-		sig = SigByState[StateFree]
-	}
-	if err := c.SetSignature(sig); err != nil {
-		log.Warn("convo:channel", "signature link degraded (%s): %v", state, err)
-	}
 }

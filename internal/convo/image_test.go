@@ -1,22 +1,29 @@
 package convo
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 )
 
-// ⚠️ **判据** (用户定的口径): 重复度高的就是表情包, 一次性的才是照片。
-// 数据坐实: 79b2858e….jpg 发了 3 次; 64cc0d94….png 只 1 次。
-func TestImageMark_RepeatsBecomeSticker(t *testing.T) {
-	if ImageIsSticker(1) || ImageIsSticker(2) {
-		t.Fatal("只发过一两次的是照片, 不是表情包")
+// ⚠️ 2026-10-16: 「按重复次数选标记」那条**已经退场** ——
+// 活路径是**标签驱动**的: `IngestImage` 用 `LabelImage` 的 `l.Render()` 出标记,
+// 而 `l.Kind == "photo"` 才决定"值得真的看一眼" (表情包不给看图 —— 行为已经写在标签里)。
+// `ImageIsSticker` / `ImageMark` 两个函数随之删除。
+//
+// 这里只钉**回退契约**: 标签拿不到时 (没库/文件不在/标注失败) 一律落 `ImagePhotoMark`,
+// 标记必须自解释 —— 不能是 "[图片]" 那种让模型以为收到了图、转头编「图太糊了」的东西。
+func TestImageMark_FallbackIsSelfExplaining(t *testing.T) {
+	if ImagePhotoMark != "[图: 一张图, 没细看]" {
+		t.Fatalf("回退标记必须自解释, 实得 %q", ImagePhotoMark)
 	}
-	if !ImageIsSticker(ImageStickerRepeats) {
-		t.Fatalf("发到 %d 次就该算表情包了", ImageStickerRepeats)
+	if ImageStickerMark != "[图: 一个表情]" {
+		t.Fatalf("表情标记必须自解释, 实得 %q", ImageStickerMark)
 	}
-	if ImageMark(1) != ImagePhotoMark || ImageMark(5) != ImageStickerMark {
-		t.Fatal("回退标记不对 (没有标签时用它)")
+	e := &Engine{}
+	if mark, look := e.IngestImage(context.Background(), ImageRef{}); mark != ImagePhotoMark || look != "" {
+		t.Fatalf("无 store 时必须落回退标记且不给看图, 实得 %q/%q", mark, look)
 	}
 }
 
@@ -35,8 +42,14 @@ func TestNoteImage_CountsPerHash(t *testing.T) {
 	if n, _ := s.NoteImage(owner, "aabb", "/x.jpg"); n != 3 {
 		t.Fatalf("第三次应当是 3, got %d", n)
 	}
-	if s.ImageSeen(owner, "AABB") != 3 {
-		t.Fatal("ImageSeen 读回来的数不对")
+	// ⚠️ 直接读库: `ImageSeen` 于 2026-10-16 删除 —— 调用方拿的是
+	// `NoteImage` 的返回值, 没有第二个读者。断言不变 (计数落库且按 md5 归一)。
+	var seen int
+	if err := s.DB.QueryRow("SELECT seen_n FROM convo_image WHERE owner=? AND md5=?", owner, "aabb").Scan(&seen); err != nil {
+		t.Fatalf("图片计数读不回来: %v", err)
+	}
+	if seen != 3 {
+		t.Fatalf("落库的计数应当是 3, got %d", seen)
 	}
 	if n, _ := s.NoteImage(owner, "ccdd", "/y.jpg"); n != 1 {
 		t.Fatalf("另一张图不该被算进上一张: %d", n)
@@ -145,10 +158,21 @@ func TestImageRefs_MatchesImageFilesOrder(t *testing.T) {
 	if err := json.Unmarshal(raw, &ev); err != nil {
 		t.Fatal(err)
 	}
-	files := ev.ImageFiles()
+	// ⚠️ 2026-10-16: 这里原来是与 `ImageFiles()` 的**交叉核对**; 那个函数已删
+	// (它只有测试在调, 活的是 `ImageRefs`)。保留下来的断言才是这条用例的价值:
+	//   · `path` 字段优先 —— 桥接方给的绝对路径才是能打开的那个;
+	//     `file` 只是裸文件名, 拿它去 open 会找不到 → 静默降级成「[图片]」(2026-10-14 实测);
+	//   · `Candidates[0]` 必须就是 `Path` (解析层与存在性层的契约);
+	//   · md5 必须带出来 (判重与照片/表情包分流都靠它)。
 	refs := ev.ImageRefs()
-	if len(files) != 1 || len(refs) != 1 || files[0] != refs[0].Path {
-		t.Fatalf("两条路不一致: files=%v refs=%+v", files, refs)
+	if len(refs) != 1 {
+		t.Fatalf("ImageRefs 应当给 1 条: %+v", refs)
+	}
+	if refs[0].Path != "/home/tzh/.nimbus/media/64cc0d94.png" {
+		t.Fatalf("应当优先 path 字段, 实得 %q", refs[0].Path)
+	}
+	if len(refs[0].Candidates) == 0 || refs[0].Candidates[0] != refs[0].Path {
+		t.Fatalf("Candidates[0] 必须就是 Path: %+v", refs[0])
 	}
 	if refs[0].MD5 != "64cc0d94" {
 		t.Fatalf("md5 没带出来: %+v", refs[0])

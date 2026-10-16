@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §2.3 世界观的读写口 ———

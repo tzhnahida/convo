@@ -6,9 +6,8 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -192,12 +191,4 @@ func TopicKeysSorted(keys []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// topicKeyDay 供夜间批使用 (与 FoldMsg 的日期无关, 显式传)。
-func topicKeyDay(day string) string {
-	if _, ok := ParseDay(day); !ok {
-		return time.Now().Format("2006-01-02")
-	}
-	return day
 }

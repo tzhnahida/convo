@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— 模块 5: 对话引擎 (§8.5 六段注入 + 帧协议) ———
@@ -108,6 +108,11 @@ type DialogInput struct {
 	// §7.5 意图轨 (天档): **TA 明确说过的**打算/偏好/边界。
 	// ⚠️ 与 Memories 分开: 那些是它的记忆, 这些是 TA 的原话。
 	IntentNotes []string
+
+	// §7.5 **群公共层** (天档): 群里大家共同的约定/梗/经历。
+	// ⚠️ 渲染里**没有 uin、没有 owner 标记** (SceneMemoryInjection 的注释):
+	// 这一层是「所有人都看得到」的那一侧, 混进个人标识就等于跨人转述。
+	SceneNotes []string
 
 	// 无来由的低意愿日。**只说行为, 不说原因** —— 它没有归因, 也不许编一个。
 	DayMoodNote string
@@ -345,6 +350,14 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 				about = append(about, m)
 			}
 		}
+		// §7.5 群公共层: **群里大家共同的**那些事。
+		// ⚠️ 段名刻意不叫「记忆」—— 段名是「这一段注入了没有」的判据 (见 promptscan_test)。
+		if len(in.SceneNotes) > 0 {
+			b.WriteString("\n【群里大家都知道的】(共同的约定与经历; 不许说成某一个人的私事)\n")
+			for _, line := range in.SceneNotes {
+				b.WriteString(line + "\n")
+			}
+		}
 		if len(about) > 0 {
 			b.WriteString("\n【你记得的关于 ta 的事】(回忆时引用 mem_id, 绝不编造没给的事)\n")
 			for _, m := range about {
@@ -419,6 +432,17 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 		// ⚠️ 它是 BodyState 的一个 kind, 但落点与病程行完全不同(见 LowMoodLine 的注释),
 		// 所以单独一段, 不挤在病程行里。
 		b.WriteString(LowMoodLine(*in.Body, clock.Now()))
+		// §4.4.6 失眠: **只说"没睡好 + 别解释原因"** —— 归因不递给模型 (§4.6.2)。
+		//
+		// ⚠️ 这一段的形状是刻意的: 成因只在函数里过一遍**红线**(被「都怪你」污染的成因
+		// 说明那条状态本身不该用 → 整条不注入), 而**不写进台词**。
+		// 原写法是「昨晚没睡好（<成因>）」= "饿了所以烦躁"的形状, 已经改掉。
+		// ⚠️ 门是 `Kind == BodyInsomnia`: 感冒 / 宿醉各有各的病程行, 不许串。
+		if in.Body.Kind == BodyInsomnia {
+			if line, ok := InsomniaCauseLine(in.Body.Cause); ok {
+				b.WriteString(line)
+			}
+		}
 	}
 	// 段 6c: §4.2.2 身体的三个连续量 (精力 / 饥饿 / 口渴)。
 	//
@@ -532,6 +556,10 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 		// §2.6 灵光分享: 唯一落点就是段 7.3 (不新增段 → 段序结构完全不动)。
 		// 文本由 SparkLine 生成 (含「不要解释」的禁止条款)。
 		b.WriteString("\n" + in.Topic.Text)
+	} else if in.Topic.Kind == "learn" && in.Topic.Text != "" {
+		// §2.5.4 分享学到的东西: 与灵光**同一个段位** (段 7.3), 措辞由 LearnShareLine 定
+		// (含「不许解释 / 不许当事实断言」两条禁止条款)。
+		b.WriteString("\n" + in.Topic.Text)
 	} else if in.Topic.Kind != "" && in.Topic.Kind != "pure" && in.Topic.Text != "" {
 		b.WriteString("\n\n【本轮话题】" + in.Topic.Text + " (自然地聊, 别硬转)")
 	}
@@ -574,7 +602,7 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 	// 段 8: 输出协议 (梗规则仅在注入黑话表时附带)
 	slangRule := ""
 	if len(in.Slangs) > 0 {
-		slangRule = " 想用梗 → 从【你会的梗】里选, 每句话最多 1 个; 含义不确定的梗绝不用。"
+		slangRule = " 想用梗 → 从上面那份梗表里选, 每句话最多 1 个; 含义不确定的梗绝不用。"
 	}
 	b.WriteString(`
 【输出】严格输出单行 JSON 帧, 不要任何其他文本:
@@ -586,7 +614,7 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 - 想说两句 → 输出**两个 text 项** (每项=一条消息, 系统按真人节奏逐条发; 不要把三句挤进一条)。
 - **每一个 text 项都必须是 {"kind":"text","text":"..."} 这个完整形状** —— 实测最容易在**第 2 项起**写坏 (键写重、或把 text 写成别的名字), 那一条会直接发不出去。
 - 禁止(出现即失败): 首先/其次/总结/升华/免费人生建议/希望有帮助/作为AI/这是个好问题/每条都以问句结尾/句句都挂～哦呢啦呀/Markdown标题列表加粗/保证解压一绝真管用强烈推荐。
-- **不许凭空断言 ta 做了什么** —— 「你这一串刷屏」「你刚说的那个」只有在【最近对话】里**真有那件事**时才能说。
+- **不许凭空断言 ta 做了什么** —— 「你这一串刷屏」「你刚说的那个」只有在上面那段对话里**真有那件事**时才能说。
   记不清就说「刚没看清」, 不许编。 (实测: 对方只发了一条, 它却说「你这一串刷屏」。)
 - **不许有无来由的反应** —— 「行 我闭嘴」「好我不说了」这类话, 前文没人提这件事时就是**凭空出现**的,
   群里的人一眼就能看出它在对着空气说话。

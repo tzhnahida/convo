@@ -129,20 +129,6 @@ func TestOneBot_call_dualTrack(t *testing.T) {
 	}
 }
 
-func TestOneBot_SetSignature_unsupported(t *testing.T) {
-	// 非 200 → 应返回错误 (调用方降级, 不中断)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 轨1 也 400 → 整体失败
-		w.WriteHeader(400)
-	}))
-	defer srv.Close()
-	c := NewOneBotClient(srv.URL, "")
-	c.selfName = "纳西妲" // 已缓存昵称
-	if err := c.SetSignature("摸鱼中"); err == nil {
-		t.Fatal("expected error on 400")
-	}
-}
-
 func TestOneBotEvent_PlainText(t *testing.T) {
 	ev := OneBotEvent{
 		Message: json.RawMessage(`[

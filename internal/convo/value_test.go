@@ -157,14 +157,10 @@ func TestValueStanceOf_IsTheOnlyMapping(t *testing.T) {
 	}
 }
 
-// TestStickerOnlyFrame_Shape §6.1 第二态的系统侧构造器。
-// 它**不进 Reply / ValidateFrame** —— 没有 LLM 参与就没有可校验的内容。
-func TestStickerOnlyFrame_Shape(t *testing.T) {
-	f := StickerOnlyFrame(7)
-	if len(f.Reply) != 1 || f.Reply[0].Kind != "sticker" || f.Reply[0].StickerID != 7 {
-		t.Fatalf("第二态帧形状不对: %+v", f.Reply)
-	}
-	if f.Degraded || f.Refused {
-		t.Fatal("表情帧既不是降级也不是拒绝 —— 它是三态里的正常一态")
-	}
-}
+// ⚠️ 2026-10-16: `TestStickerOnlyFrame_Shape` **已删**, 连同它测的 `StickerOnlyFrame`。
+//
+// §6.1 第二态**一直是通的** —— 但它的发射器不是帧, 而是 `Engine.ReactInGroup`
+// (main.go 的 `case convo.StanceReact:` 分支 → `GroupSender.SendGroupImage`)。
+// 那个帧构造器没有任何消费者: 留着它, 下一个人会去接帧那条路, 然后困惑于"为什么发不出去"。
+// 真正要钉的不变量在 `ReactInGroup` 里 (文件真的在才发 / 一张能用的都没有就**什么都不做**,
+// 不许退化成发文本), 而那一条由 value 侧的用例覆盖。

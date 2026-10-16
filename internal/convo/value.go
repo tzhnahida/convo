@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §6.3 沉默判据: 三态裁决 ———
@@ -292,26 +292,6 @@ func ValueStanceOf(willingness int) SpeakStance {
 	default:
 		return StanceSpeak
 	}
-}
-
-// StickerOnlyFrame §6.1 第二态的系统侧构造器。
-//
-// ⚠️ **不走 Reply / ValidateFrame** —— 没有 LLM 参与, 就没有可校验的内容;
-// ValidateFrame 要求"至少一条 text"是给**模型生成**的帧定的规矩。
-// 塞进去只会得到一条无关的违规。
-func StickerOnlyFrame(stickerID int64) OutputFrame {
-	return OutputFrame{Reply: []FrameItem{{Kind: "sticker", StickerID: stickerID}}}
-}
-
-// hasAnySubstr 五条判据共用的廉价子串命中 (照抄 slang 的形状: 长词优先由调用方保证)。
-func hasAnySubstr(text string, words []string) bool {
-	for _, w := range words {
-		w = strings.TrimSpace(w)
-		if len([]rune(w)) >= 2 && strings.Contains(text, w) {
-			return true
-		}
-	}
-	return false
 }
 
 // ——— 引擎侧: 完整裁决链 ———
@@ -630,6 +610,18 @@ func (e *Engine) recordGateOutcome(sc SceneMsg, out GroupGateResult) {
 		if err := SaveBond(e.Store.DB, owner, sc.SceneKey, b); err != nil {
 			log.Warn("convo:value", "关系量落库失败: %v", err)
 		}
+		// §5.6 **关系阶段落到场景行** —— 群这条路原来缺的正是这一步。
+		//
+		// ⚠️ 私聊走 `NoteSceneBond`, 它里面自带这句; 而群这条路是**直接** `SaveBond`,
+		// 于是 `convo_scene.stage` 只有 `EnsureScene` 插入那一次的 `stranger`:
+		//   · `SelfRoleLine`(群里"能不能怼")永远按陌生档说话;
+		//   · `conflictwire` A1(阶段=陌生 → 有冲突也不掺和)永远触发;
+		//   · 热力 `CapOf(stage)` 永远拿 20 → **群内主动配额恒为 0**。
+		// 生产实测 (2026-10-16): 群 closeness 0.37, 而 stage 仍是 stranger。
+		//
+		// ⚠️ 传**刚落库的** `b`(不是 `br.Bond`): 库里的值已经是它 —— 用旧值会让阶段
+		// 永远慢一条消息, 而"慢一条"这种偏差在别处已经坑过一次。
+		e.NoteSceneStage(sc.SceneKey, BondRecord{Loaded: true, Bond: b})
 	}
 	// §7.5 意图轨: **只收 plan/preference/boundary** —— fact 已经走记忆那条路,
 	// 两边都收会让同一句话在提示里出现两次。
@@ -786,6 +778,24 @@ func (e *Engine) ReactInGroup(sceneKey string, groupID int64) error {
 	return nil
 }
 
+// SceneMemoryInjectMax 群公共层一次最多注入几行。
+//
+// ⚠️ 与别的段一样是**预算**: 群共识再重要也不该把这一轮的话挤没。
+const SceneMemoryInjectMax = 6
+
+// sceneNotes §7.5 群公共层的注入行。读不到 → nil (= **不注入**, 失败往「少说」倒)。
+func (e *Engine) sceneNotes(sceneKey string) []string {
+	if e.Store == nil || strings.TrimSpace(sceneKey) == "" {
+		return nil
+	}
+	lines, err := e.Store.SceneMemoryInjection(sceneKey, SceneMemoryInjectMax)
+	if err != nil {
+		log.Warn("convo:scene", "群公共层读取失败(这一轮不注入): %v", err)
+		return nil
+	}
+	return lines
+}
+
 // SpeakInGroup §6.10 **第三态**: 在群里开一次口。
 //
 // ⚠️ 与私聊路径的三处不同 (每一处漏了都会出事):
@@ -837,6 +847,7 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		RepeatNote: e.repeatNote(sceneKey),
 		NewsNote:   e.newsNote(),
 		WorldNote:  e.worldNote(),
+		SceneNotes: e.sceneNotes(sceneKey), // §7.5 群公共层
 		State:      e.currentState(),
 		ActionKind: ActImmediate,
 		SceneKey:   sceneKey, // ← 决定 L1 取谁的历史

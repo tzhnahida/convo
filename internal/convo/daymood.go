@@ -62,12 +62,6 @@ func DayMoodDelayFactor(m DayMood) float64 {
 	return 1.0
 }
 
-// DayMoodAllowsProactive 低意愿日**不开场**。
-//
-// ⚠️ 二进制门, 不是概率缩放 —— 「今天它没来找我」是一个可以被观察到的行为,
-// 而"今天找我的概率低了 40%"没有任何人能感觉出来。
-func DayMoodAllowsProactive(m DayMood) bool { return m != DayMoodLow }
-
 // DayMoodBlocksAction 这个动作今天要不要被低意愿日拦下。
 //
 // ⚠️ 抽成纯函数**就是为了能被测**: 埋在 proactive 里的话,

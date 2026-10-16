@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/ai"
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/convo"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/ai"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/convo"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 func parseQQ(s string) int64 {
@@ -93,6 +93,13 @@ func main() {
 		UserID:  parseQQ(cfg.Channel.OwnerQQ),
 		Lang:    cfg.Stickers.Lang,
 	}
+	// §3.6 事件池预算: 主控从 convo.yaml 读一次 (零值 = 内置默认, 与「不设置」完全等价)。
+	// ⚠️ 只设一次: 这个闸门是**进程级**的 (eventgen.go 的 eventGenBud), 不是每个引擎一份。
+	convo.SetEventGenBudget(convo.EventGenBudget{
+		CallsPerDay:  cfg.Sched.EventGenCallsPerDay,
+		Candidates:   cfg.Sched.EventGenCandidates,
+		LookbackDays: cfg.Sched.EventGenLookbackDays,
+	})
 	// Vision: 用户发图 → 看图说话 (v4-flash-vision-exp, 同 key)
 	if cfg.AI.APIKey != "" && cfg.AI.VisionModel != "" {
 		engine.VisionClient = ai.NewClient(ai.Config{
@@ -391,11 +398,8 @@ func main() {
 		}
 	}
 
-	// 模块 3: 状态机 — 回调 = 签名联动 + 睡点日终批 (先注册, tick 后启动)
+	// 模块 3: 状态机 — 回调 = 睡点日终批 (先注册, tick 后启动)
 	sched.OnStateChange = func(state string, at time.Time) {
-		if cfg.Channel.LinkSignature && bot != nil {
-			bot.LinkSignature(state)
-		}
 		engine.OnStateChange(state, at)
 	}
 	sched.Start(ctx)

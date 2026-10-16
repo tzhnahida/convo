@@ -3,8 +3,8 @@ package convo
 import (
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // noteRoleOutcome 角色账本的写入点 —— **每次群裁决都记一笔**。

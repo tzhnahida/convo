@@ -5,10 +5,10 @@ import (
 
 	"encoding/json"
 	"fmt"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/log"
 	"strings"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— P5 决策轨迹回放 (D1) ———

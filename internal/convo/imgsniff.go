@@ -1,6 +1,6 @@
 package convo
 
-import "github.com/tzhnahida/VocabLock/internal/ai"
+import "github.com/tzhnahida/convo/internal/ai"
 
 // ⚠️ 魔数表**只有一份**, 在 ai 包里 (internal/ai/magic.go) ——
 // convo 这里只是转发。两份表迟早会分叉, 而分叉的表现是

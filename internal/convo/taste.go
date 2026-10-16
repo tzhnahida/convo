@@ -48,15 +48,6 @@ func TasteOf(hits []TasteHit, topic string) (float64, bool) {
 // TasteHitThreshold 接话率超过它才算「有品味」。
 const TasteHitThreshold = 0.4
 
-// TasteCounts 给 ValueInput 用的读数: (接话率是否够高, 有没有样本)。
-func TasteCounts(hits []TasteHit, topic string) (float64, bool) {
-	r, ok := TasteOf(hits, topic)
-	if !ok || r < TasteHitThreshold {
-		return 0, false
-	}
-	return r, true
-}
-
 // SceneColdGap 判据④ 的读数。
 //
 //	has     = 这个场景**有过**上一条消息 (没有 = 新场景, 不是冷场)
@@ -142,28 +133,6 @@ func LoadTaste(db *sql.DB, owner string) ([]TasteHit, error) {
 		out = append(out, h)
 	}
 	return out, rows.Err()
-}
-
-// LastSceneMessageAt 场景里上一条消息的时刻。
-// ⚠️ 只认**真人/它自己说过的话**, 不含 ai_to_ai —— 夜间批算的产物不该把冷场刷掉。
-func LastSceneMessageAt(db *sql.DB, sceneKey string) (time.Time, bool, error) {
-	if sceneKey == "" {
-		return time.Time{}, false, nil
-	}
-	var ts string
-	err := db.QueryRow("SELECT ts FROM convo_messages WHERE scene_key = ? AND origin <> 'ai_to_ai' "+
-		"ORDER BY id DESC LIMIT 1", sceneKey).Scan(&ts)
-	if err == sql.ErrNoRows {
-		return time.Time{}, false, nil
-	}
-	if err != nil {
-		return time.Time{}, false, err
-	}
-	t, ok := ParseMsgTS(ts)
-	if !ok {
-		return time.Time{}, false, nil
-	}
-	return t, true, nil
 }
 
 // ColdGapMin / ColdGapMax 判据④ 的窗口。

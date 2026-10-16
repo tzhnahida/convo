@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -219,7 +219,9 @@ func (e *Engine) settleStrain(day string) {
 		log.Warn("convo:strain", "strain 落库失败: %v", err)
 		return
 	}
-	log.Info("convo:strain", "§4.1.1 %s 心情均值 %.2f → strain %.3f", day, mean, next)
+	// ⚠️ `fmtStrain` 原来零调用 —— 于是"strain 只给日志/owner"这句话是空的:
+	// 日志里只有一个裸浮点 (%.3f), 而 owner 看它得自己换算档位。
+	log.Info("convo:strain", "§4.1.1 %s 心情均值 %.2f → strain %s (%.3f)", day, mean, fmtStrain(next), next)
 	e.applyLowMood(next)
 }
 

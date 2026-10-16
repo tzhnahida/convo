@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/ai"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/ai"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 var osRemove = os.Remove // test hook

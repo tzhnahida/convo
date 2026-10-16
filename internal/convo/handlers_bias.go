@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -204,7 +204,17 @@ func (s *Server) handleObservation(w http.ResponseWriter, r *http.Request) {
 			unsaid++
 		}
 	}
-	writeJSON(w, map[string]interface{}{
+	// §12 观测面 (2026-10-16): 下面这几组读数**算好了却没有任何出口** ——
+	// 它们全在 knownUnwired 里, 属于"读数写好了、控制台没显示"那一类
+	// (不改行为, 只影响**你能不能看见**)。观察台是它们的落点。
+	ev := EventGenStatsSnapshot()
+	evCallsOn, _ := s.Store.EventGenCallsOn(day)
+	evTotal, evFails, evEvents, _ := s.Store.EventGenDaySummary(day)
+	evLedger, _ := s.Store.EventGenLedger(day, 5)
+	moodLog, _ := s.Store.MoodLog(10)
+	reliable, _ := s.Store.Reliability(clock.Now(), 7*24*time.Hour)
+	breach, _ := s.Store.BreachRate(clock.Now(), 7*24*time.Hour)
+	payload := map[string]interface{}{
 		"day": day,
 		"stance": map[string]interface{}{
 			"silent": fs.StanceSilent, "react": fs.StanceReact, "speak": fs.StanceSpeak,
@@ -229,7 +239,8 @@ func (s *Server) handleObservation(w http.ResponseWriter, r *http.Request) {
 			"why_not": learnWhyNot(shouldLearnToday(clock.Now()), learnEligibleNow(s), learnRuns, learnStateNow(s)),
 		},
 		"share_week": map[string]interface{}{"used": shareWeek, "cap": ShareWeeklyCap},
-		"topic_keys": topicKeys,
+		// ⚠️ 排序去重是**读数该有的形状**: 同一天重复的键会让"最近 7 天"看起来比实际热闹。
+		"topic_keys": TopicKeysSorted(topicKeys),
 		"sparks": map[string]interface{}{
 			"sharable": len(sparks), "daily_max": SparkDailyMax,
 		},
@@ -238,7 +249,53 @@ func (s *Server) handleObservation(w http.ResponseWriter, r *http.Request) {
 			// 设计稿 L153: 「学到的 90% 永远不说出来」—— 这个比例是**读数**, 不是指标。
 			"unsaid_ratio": rate(unsaid, len(learned)),
 		},
-	})
+		// ——— §12 观测面: 事件池 / 夜间分档 / 心情流水 / 可靠性 ———
+		"eventgen": map[string]interface{}{
+			"calls": ev.Calls, "success": ev.Success, "model_fail": ev.ModelFail,
+			"budget_denied": ev.BudgetDenied, "fallbacks": ev.Fallbacks, "produced": ev.Produced,
+			"rolled_out": ev.RolledOut, "template_evts": ev.TemplateEvts,
+			// ⚠️ 这两个速率**只活在结构体上**, 没有 JSON 字段接它们 ——
+			// 于是部署上"降级率 0%"这句话没有出处。§3.6.3 说收下 3-5 条才算正常。
+			"fallback_rate": ev.FallbackRate(),
+			"avg_produced":  ev.AvgProduced(),
+			"calls_today":   evCallsOn,
+			"today":         map[string]interface{}{"calls": evTotal, "fails": evFails, "events": evEvents},
+			"ledger":        evLedger,
+			"dropped":       ev.Dropped, "reasons": ev.Reasons,
+			"last_reason": ev.LastReason, "samples": ev.Samples,
+		},
+		"night_tiers": NightTierStatsSnapshot(),
+		"mood_log":    moodLog,
+		"reliability": map[string]interface{}{
+			"reliable": reliable, "breach_rate": breach, "window": "7d",
+		},
+		// §4.6 M21 **违抗率**: 分子是实发里认出违抗档的条数 (noteDefianceIfAny),
+		// 分母是今天真的发出去了几轮。⚠️ 两条都是**实发**口径 —— 降级产物不算它说的。
+		"defiance": map[string]interface{}{
+			"today":        counterOrZero(s.Store, "defiance", day),
+			"rounds_today": counterOrZero(s.Store, "rounds", day),
+			"rate":         rate(counterOrZero(s.Store, "defiance", day), counterOrZero(s.Store, "rounds", day)),
+		},
+	}
+	// ——— 需要**场景键**才成立的读数 (没有键就报不出来, 报了也是别的群的) ———
+	if scene := strings.TrimSpace(r.URL.Query().Get("scene")); scene != "" {
+		// §6.6 角色位: 「它在这个群里的位」是 owner 在群里最常问的一件事。
+		// ⚠️ 位是**处出来的** (账本优先), 所以只有读出来才算数 —— 别在别处照着种子猜。
+		role := GroupRoleOfStore(s.Store, scene)
+		payload["role"] = map[string]interface{}{
+			"scene": scene, "key": string(role), "label": GroupRoleLabel(role),
+		}
+		// §6.9 R24 冲突介入: 「这一对被劝过几次」——冷却闸门只保证窗口内不重复,
+		// 数一遍才知道有没有失控。
+		if pair := strings.TrimSpace(r.URL.Query().Get("pair")); pair != "" {
+			n, _ := s.Store.ConflictActionCount(scene, pair)
+			acts, _ := s.Store.ConflictActions(scene, pair)
+			payload["conflict_actions"] = map[string]interface{}{
+				"scene": scene, "pair": pair, "count": n, "actions": acts,
+			}
+		}
+	}
+	writeJSON(w, payload)
 }
 
 func learnWeekdayNames() []string {

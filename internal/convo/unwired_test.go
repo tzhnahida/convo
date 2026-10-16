@@ -128,62 +128,25 @@ func stripGoNoise(src string) string {
 // SparkLine 与 MarkSparkSaid 从这份名单里消失了 —— 而"消失了却没删"本身也会红。
 // 那个反方向是刻意加的: 没有它, 名单只会越长越像噪声。
 var knownUnwired = map[string]bool{
-	"Associate":               true,
-	"AvgProduced":             true,
-	"BreachRate":              true,
-	"BuildAssocIndex":         true,
-	"ConflictActFrameIsClean": true,
-	"ConflictActionCount":     true,
-	"ConflictActions":         true,
-	"DayMoodAllowsProactive":  true,
-	"DecideShare":             true,
-	"DeclineForcesImmediate":  true,
-	"DefaultGroupConfig":      true,
-	"DefianceHits":            true,
-	"EventGenCallsOn":         true,
-	"EventGenDaySummary":      true,
-	"EventGenLedger":          true,
-	"EventGenStatsSnapshot":   true,
-	"FallbackRate":            true,
-	"FatigueQuotaProjection":  true,
-	"FeedbackBoundaryLine":    true,
-	"GroupRoleLabel":          true,
-	"HabitFromMemories":       true,
-	"ImageFiles":              true,
-	"ImageMark":               true,
-	"ImageSeen":               true,
-	"InsomniaCauseLine":       true,
-	"IntentRetrievable":       true,
-	"LastSceneMessageAt":      true,
-	"LoadFold":                true,
-	"LongMemoryDecay":         true,
-	"NightTierStatsSnapshot":  true,
-	"PromptDiff":              true,
-	"PromptStructureProblem":  true,
-	"Reliability":             true,
-	"RetireCastMember":        true,
-	"SaveInterruption":        true,
-	"SaveSceneMemory":         true,
-	"SceneMemoryInjection":    true,
-	"SceneMemoryOrigin":       true,
-	"SetEventGenBudget":       true,
-	"SetMemberStage":          true,
-	"SetMemberTaboo":          true,
-	"MoodLog":                 true,
-	"SlangByPhrase":           true,
-	"SparkHasInterface":       true,
-	"StickerOnlyFrame":        true,
-	"SuspendedAt":             true,
-	"TasteCounts":             true,
-	"TierReason":              true,
-	"TokenCount":              true,
-	"TopicKeysSorted":         true,
-	"Unwrap":                  true,
-	"WithDay":                 true,
-	"fmtStrain":               true,
-	"hasAnySubstr":            true,
-	"learnSystemPrompt":       true,
-	"topicKeyDay":             true,
+	// ⚠️ FatigueQuotaProjection 是**设计上的例外** (与 Unwrap 同类): 它的契约是**恒为 (0,false)** ——
+	// 疲劳不切配额是 §4.3 C4 拍死的 (配额已有两个减项, 再加第三个就无法归因「今天为什么不说话」)。
+	// 它存在的理由是**让那条纪律可断言** (TestFatigue_DoesNotCutQuota), 不是被谁调用。**不许删**。
+	"FatigueQuotaProjection": true,
+	// ⚠️ IntentRetrievable 也是**设计上的例外** (第三类: 用来钉纪律的常量)。
+	// 它的契约是**恒为 false** —— 「intent 轨永远不参与检索」是双轨的边界,
+	// 而它刻意返回常量而不是字段: "配置化就是给它留后门"。
+	// 钉它的是两条测试 (newmods2_test / wiring_test), 不是生产调用 —— **不许删**。
+	"IntentRetrievable": true,
+	// ⚠️ `SlangByPhrase` 与 `ImageFiles` 同类: 活数据的**第三种读视图**, 只有测试在调。
+	"SlangByPhrase": true,
+	// ⚠️ `ImageFiles` 是 `ImageRefs` 的**简化视图**, 只有测试在调 (`imagefiles_test.go`
+	// 整个文件都在测它的字段优先级)。那一类"只有测试在用的公开视图"是本棘轮的已知盲区 ——
+	// **不许再删**: 删了就得把测试一条条改掉, 而它们钉的是真实的线上格式行为。
+	"ImageFiles": true,
+	// ⚠️ `Unwrap` 是 **error 链接口方法** —— `errors.Is/As` 隐式调用它, 没有直接调用点。
+	// 棘轮只看"有没有显式调用者", 所以这一类 (Unwrap / String / Error / MarshalJSON …)
+	// 会被它误报。留在名单里, **不许删**: 删了 `errors.Is` 就失效, 而现象是"包装错误认不出来了"。
+	"Unwrap": true,
 }
 
 // TestNoUnwiredFunctions 扫「定义了但从没被非测试代码调用过」的函数。

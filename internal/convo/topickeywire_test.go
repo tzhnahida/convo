@@ -3,7 +3,7 @@ package convo
 import (
 	"testing"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // TestTopicOf_TwoTiersAndTheirOrder

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §4.3 / §5.5 的「日级处境段」 ———
@@ -212,24 +212,33 @@ func DefianceLine(mode DefianceMode, stance string) string {
 	return sb.String()
 }
 
-// dayNote 组装今天的处境 (§4.3)。**读不到就返回空串 = 不注入** ——
-// 与 moodWillingness() 读不到返回 1.0 同一条原则: 失败往「正常说话」倒。
-func (e *Engine) dayNote(now time.Time, userText string, ag *AgencyContext) string {
+// declinePermit 今天「明说不想聊」的许可被授予了吗 (§4.3)。
+//
+// ⚠️ 抽出来是为了**两处共用同一份判据**: dayNote 把它写进段 6a2,
+// 而对话路径用它决定「这一轮要不要装死」。两处各算一遍迟早分叉,
+// 而分叉的表现是「许可注入了, 但那一轮还是排了延迟回复」—— 许可永远发不出去。
+func (e *Engine) declinePermit(now time.Time, userText string) (bool, string) {
 	mood, _ := e.Store.LoadMood()
 	body, _ := e.Store.LoadBody()
-	be := body.Effect(now)
-
-	fx := e.fatigueTier(now)
-
-	permit, why := DeclinePermit(DeclineInput{
+	return DeclinePermit(DeclineInput{
 		Valence:     mood.Valence,
 		Arousal:     mood.Arousal,
-		BodyDecline: be.CanDecline,
-		FatigueTier: fx,
+		BodyDecline: body.Effect(now).CanDecline,
+		FatigueTier: e.fatigueTier(now),
 		UsedToday:   counterOrZero(e.Store, "declines", clock.Today()) >= 1,
 		Tier:        string(ClassifyRequest(userText, urgentWords)),
 		State:       e.currentState(), // 与 fatigueTier 共用同一次日程读取路径
 	}, e.Cfg.Sched)
+}
+
+// dayNote 组装今天的处境 (§4.3)。**读不到就返回空串 = 不注入** ——
+// 与 moodWillingness() 读不到返回 1.0 同一条原则: 失败往「正常说话」倒。
+func (e *Engine) dayNote(now time.Time, userText string, ag *AgencyContext) string {
+	// ⚠️ mood / body 的读取已经搬进 `declinePermit` —— 两处各读一次不仅多两次 IO,
+	// 还会让「许可」与「别人的读数」来自不同时刻。
+	fx := e.fatigueTier(now)
+
+	permit, why := e.declinePermit(now, userText)
 
 	si := SituationInput{Now: now, DeclineOK: permit, DeclineWhy: why, Fatigue: fx}
 	ag.agencyDay(&si) // §5.5 的日级部分 (待履行约定 / 补偿义务 / 可否再约)
@@ -344,7 +353,9 @@ func (e *Engine) fatigueTier(now time.Time) int {
 // (心情 -1 / 身体 -2), 再加第三个会让「今天为什么不说话」无法归因。
 // 疲劳的落点是**延迟**与**拒绝权门槛**, 不是配额 —— 见 fatigue.go 文件头。
 func (e *Engine) fatigueEffect(now time.Time) FatigueEffects {
-	return FatigueEffectsFor(e.fatigueTier(now))
+	// ⚠️ **必须盖日戳**: Apply 的过期判据靠 Day —— 不填 = 未提供 = **不判过期**,
+	// 于是「昨天累不累」会一路算到今天 (WithDay 此前零调用)。
+	return FatigueEffectsFor(e.fatigueTier(now)).WithDay(clock.Today())
 }
 
 // ——— §5.5 约定的时刻解析与到点结算 ———

@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— §5.5 主体性: 拒绝 · 毁约 · 违抗 (叶子模块) ———
@@ -558,6 +558,19 @@ var agDefiancePhrases = []struct {
 	{DefyDelay, []string{"等下", "待会", "待会儿", "一会儿", "回头", "晚点", "过会儿", "再说吧", "等下再说"}},
 	{DefyRefuse, []string{"不想", "不要", "不了", "不行", "没空", "算了", "不去", "不聊", "懒得", "没心情"}},
 	{DefyTalkBack, []string{"凭什么", "你自己", "才不", "少来", "你管", "随便你", "爱怎样怎样", "切", "哼"}},
+}
+
+// noteDefianceIfAny §4.6 M21: 从**实发文本**里认出违抗档 → 计一次 (违抗率)。
+//
+// ⚠️ 与 noteDeclineIfAny / noteBodySolicit 同规: 只在**真的发出去了**之后记 ——
+// 降级帧与硬拒帧里出现「我偏不」**不算它说的** (那些话没发出去)。
+// ⚠️ 与 BodySolicitHits 的区别: 那条是**硬线报警**, 这条是**度量** ——
+// 违抗是设计允许的行为 (§5.5), 记它不是为了拦它。
+func (e *Engine) noteDefianceIfAny(text string) {
+	if e.Store == nil || len(DefianceHits(text)) == 0 {
+		return
+	}
+	_, _ = e.Store.CounterInc("defiance", clock.Today())
 }
 
 // DefianceHits 从**实发文本**里认出违抗档 (M21: 违抗率)。

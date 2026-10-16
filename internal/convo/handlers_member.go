@@ -45,7 +45,7 @@ func (s *Server) handleMemberGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.Store.DB.Query(
-		`SELECT uin, COALESCE(display_name,''), COALESCE(address_as,''), COALESCE(stage,'') `+
+		`SELECT uin, COALESCE(display_name,''), COALESCE(address_as,''), COALESCE(stage,''), COALESCE(taboo_json,'') `+
 			`FROM convo_scene_member WHERE scene_key=? ORDER BY uin`, scene)
 	if err != nil {
 		writeJSON(w, map[string]interface{}{"error": "query"})
@@ -54,8 +54,8 @@ func (s *Server) handleMemberGet(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []map[string]interface{}{}
 	for rows.Next() {
-		var uin, name, addr, stage string
-		if err := rows.Scan(&uin, &name, &addr, &stage); err != nil {
+		var uin, name, addr, stage, taboo string
+		if err := rows.Scan(&uin, &name, &addr, &stage, &taboo); err != nil {
 			continue
 		}
 		out = append(out, map[string]interface{}{
@@ -63,6 +63,8 @@ func (s *Server) handleMemberGet(w http.ResponseWriter, r *http.Request) {
 			"display_name": name,
 			"address_as":   addr,
 			"stage":        stage,
+			// 禁区**解码后**返回: 库里存的是 JSON 文本, 而调用方要的是那个列表。
+			"taboo": decodeTaboo(taboo),
 		})
 	}
 	writeJSON(w, map[string]interface{}{"scene": scene, "members": out})
@@ -76,9 +78,13 @@ func (s *Server) handleMemberGet(w http.ResponseWriter, r *http.Request) {
 // 而没有确认位: 它不像"停用全部教练规则"那样是批量的, 一次只动一个人、一个场景。
 func (s *Server) handleMemberSet(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Scene   string `json:"scene"`
-		UIN     string `json:"uin"`
-		Address string `json:"address"`
+		Scene string `json:"scene"`
+		UIN   string `json:"uin"`
+		// ⚠️ 指针: 区分「没给这个字段」与「给了空串 (= 清掉称呼)」。
+		// 用值类型的话, 只改禁区的请求会把称呼一起清掉 —— 而那是**静默**的。
+		Address *string  `json:"address"`
+		Taboo   []string `json:"taboo"`
+		Stage   string   `json:"stage"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if strings.TrimSpace(body.Scene) == "" || strings.TrimSpace(body.UIN) == "" {
@@ -88,19 +94,54 @@ func (s *Server) handleMemberSet(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if err := s.Store.SetMemberAddress(body.Scene, body.UIN, body.Address); err != nil {
-		// 最常见的那种失败是"这个成员还没登记" ——
-		// 而 SetMemberAddress 报错而不是静默不写 (它的错误信息自己说了怎么修)。
+	// ⚠️ 三种字段的判据**各不相同**, 而这不是风格问题:
+	//   给了 address (哪怕空串) → 写; 没给 → 不动 (空串 = 清掉称呼, 是合法语义)
+	//   给了 taboo (哪怕 [])   → 写; 没给 → 不动 (空列表 = 没有禁区)
+	//   给了非空 stage         → 写 (空 stage 不是合法值, 没有「清掉阶段」这回事)
+	var changed []string
+	if body.Address != nil {
+		if err := s.Store.SetMemberAddress(body.Scene, body.UIN, *body.Address); err != nil {
+			memberSetFail(w, err)
+			return
+		}
+		changed = append(changed, "address")
+	}
+	if body.Taboo != nil {
+		if err := s.Store.SetMemberTaboo(body.Scene, body.UIN, body.Taboo); err != nil {
+			memberSetFail(w, err)
+			return
+		}
+		changed = append(changed, "taboo")
+	}
+	if strings.TrimSpace(body.Stage) != "" {
+		if err := s.Store.SetMemberStage(body.Scene, body.UIN, body.Stage); err != nil {
+			memberSetFail(w, err)
+			return
+		}
+		changed = append(changed, "stage")
+	}
+	if len(changed) == 0 {
+		// 一个字段都没给 → **说清楚要给什么**, 而不是回一个空 ok。
 		writeJSON(w, map[string]interface{}{
-			"error":  "set failed",
-			"detail": err.Error(),
+			"error":  "nothing to change",
+			"code":   "need_one_of",
+			"fields": []string{"address", "taboo", "stage"},
 		})
 		return
 	}
 	writeJSON(w, map[string]interface{}{
-		"ok":         true,
-		"scene":      body.Scene,
-		"uin":        body.UIN,
-		"address_as": body.Address,
+		"ok":      true,
+		"scene":   body.Scene,
+		"uin":     body.UIN,
+		"changed": changed,
+	})
+}
+
+// memberSetFail 三种写法的**同一种失败**: 最常见的是「这个成员还没登记」——
+// 而三个 setter 都报错而不是静默不写 (它们的错误信息自己说了怎么修)。
+func memberSetFail(w http.ResponseWriter, err error) {
+	writeJSON(w, map[string]interface{}{
+		"error":  "set failed",
+		"detail": err.Error(),
 	})
 }

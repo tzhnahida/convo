@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ——— §5.5 写路径 + §4.3 中断恢复: 接线测试 ———

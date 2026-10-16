@@ -1,11 +1,10 @@
 package convo
 
 import (
-	"sort"
 	"strings"
 	"unicode"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -38,12 +37,6 @@ type AssocItem struct {
 	Weight float64 // ⚠️ 只做**同分裁决**，绝不是入口
 }
 
-// AssocIndex 按线索词建的反向索引。
-type AssocIndex struct {
-	byToken map[string]AssocCue
-	items   []AssocItem
-}
-
 // assocStopChars 单字功能词表。
 //
 // ⚠️ 判据是**停用词表**，不是「长度 < 2」。
@@ -74,110 +67,6 @@ func assocCueRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-// assocStopToken 是不是该丢的线索。
-func assocStopToken(tok string) bool {
-	if len([]rune(tok)) > 1 {
-		return false
-	}
-	return assocStopChars[tok]
-}
-
-// BuildAssocIndex 建索引。空线索的记忆**不进索引** —— 它永远不可能被联想起来。
-func BuildAssocIndex(items []AssocItem) *AssocIndex {
-	ix := &AssocIndex{byToken: map[string]AssocCue{}}
-	for _, it := range items {
-		kept := make([]AssocCue, 0, len(it.Cues))
-		for _, c := range it.Cues {
-			tok := strings.TrimSpace(c.Token)
-			if tok == "" || assocStopToken(tok) {
-				continue // 空线索与单字功能词是噪声，直接不要
-			}
-			c.Token = tok
-			if _, ok := ix.byToken[tok]; !ok {
-				ix.byToken[tok] = c
-			}
-			kept = append(kept, c)
-		}
-		if len(kept) == 0 {
-			continue
-		}
-		it.Cues = kept
-		ix.items = append(ix.items, it)
-	}
-	return ix
-}
-
-// TokenCount 索引里有多少条线索（管理页/测试读数）。
-func (ix *AssocIndex) TokenCount() int {
-	if ix == nil {
-		return 0
-	}
-	return len(ix.byToken)
-}
-
-// cuesIn 当下文本里出现了哪些线索词，按**具体度**（字面长度）降序。
-func (ix *AssocIndex) cuesIn(text string) []AssocCue {
-	if ix == nil || text == "" {
-		return nil
-	}
-	var out []AssocCue
-	for tok, cue := range ix.byToken {
-		if strings.Contains(text, tok) {
-			out = append(out, cue)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		li, lj := len([]rune(out[i].Token)), len([]rune(out[j].Token))
-		if li != lj {
-			return li > lj
-		}
-		return out[i].Token < out[j].Token
-	})
-	return out
-}
-
-// Associate 从当下文本出发做一次联想。
-// 返回 (记忆, 触发它的线索, 是否成立)。**没有任何线索命中时返回 false。**
-// skip 用来避免同一段记忆在一场对话里被反复提起。
-func (ix *AssocIndex) Associate(text string, skip map[string]bool) (AssocItem, AssocCue, bool) {
-	cues := ix.cuesIn(text)
-	if len(cues) == 0 {
-		return AssocItem{}, AssocCue{}, false
-	}
-	best := -1
-	bestScore := -1
-	var bestCue AssocCue
-	for i, it := range ix.items {
-		if skip != nil && skip[it.Key] {
-			continue
-		}
-		for _, cue := range cues {
-			hit := false
-			for _, c := range it.Cues {
-				if c.Token == cue.Token {
-					hit = true
-					break
-				}
-			}
-			if !hit {
-				continue
-			}
-			score := len([]rune(cue.Token))
-			if score > bestScore ||
-				(score == bestScore && best >= 0 && (it.Weight > ix.items[best].Weight ||
-					(it.Weight == ix.items[best].Weight && it.Key < ix.items[best].Key))) {
-				best, bestScore, bestCue = i, score, cue
-			}
-		}
-	}
-	if best < 0 {
-		return AssocItem{}, AssocCue{}, false
-	}
-	return ix.items[best], bestCue, true
-}
-
-// AssociationLine 联想 → 注入段。
-// ⚠️ 结尾那句「不搭就别提」不是客套：联想式检索的失败模式就是**硬扯**，
 // 而硬扯比不提更伤 —— 它暴露了"她在翻档案"。
 func AssociationLine(item AssocItem, cue AssocCue) (string, bool) {
 	tok := strings.TrimSpace(cue.Token)

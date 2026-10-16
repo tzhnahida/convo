@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
+	"github.com/tzhnahida/convo/internal/clock"
 )
 
 func chimeEngine(t *testing.T, roll int) *Engine {

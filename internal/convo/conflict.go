@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tzhnahida/VocabLock/internal/clock"
-	"github.com/tzhnahida/VocabLock/internal/log"
+	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ——— §6.9 群内职责与冲突介入 (叶子模块) ———
@@ -826,7 +826,16 @@ func (s *Store) RecordConflictAction(sceneKey, pairKey, mode string, escalated b
 	_, err = s.DB.Exec(`INSERT INTO convo_conflict_action
         (scene_key, pair_key, acted_ts, mode, escalated, outcome) VALUES(?,?,?,?,?,'')`,
 		sceneKey, pairKey, at.Format(conflictTSLayout), mode, esc)
-	return err
+	if err != nil {
+		return err
+	}
+	// R24 的**审计读数**: 同一冲突窗内只许 1 条, 而冷却闸门只保证「窗口内不重复」——
+	// 「这一对到底被劝过几次」没有任何闸门能回答, 只有数一遍才知道。
+	// ⚠️ 读失败不改变结果 (行已经落库了), 这里只是把计数说出来。
+	if n, cerr := s.ConflictActionCount(sceneKey, pairKey); cerr == nil && n > 1 {
+		log.Warn("convo:conflict", "R24 这一对已落 %d 条介入 (scene=%s pair=%s)", n, sceneKey, pairKey)
+	}
+	return nil
 }
 
 // RecordConflictDecision 把一个决策落成事实。
