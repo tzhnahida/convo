@@ -157,7 +157,35 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 		}
 		staticFS = http.FS(sub)
 	}
-	mux.Handle("/", http.FileServer(staticFS))
+	// ⚠️ 老 UI 挪到 /admin/ 之下, **根路径只剩一个 302** (2026-10-16 owner 定):
+	// 根路径是所有人(包括 owner)第一眼打开的东西, 而它原来是**编译产物** ——
+	// 改了 admin_dist 的源码不重新构建, 页面上完全看不出来,
+	// 而"改了但没生效"和"没改"长得一模一样 (与 dashboard_html.go 头部同一条理由)。
+	//
+	// ⚠️ 相对路径不用改写: 老页面的 index.html 引用的是 "./assets/...",
+	// 挂在 /admin/ 之下它自然解析成 /admin/assets/... ✓
+	mux.Handle("/admin/", http.StripPrefix("/admin/", http.FileServer(staticFS)))
+	mux.HandleFunc("/", s.handleRoot)
+}
+
+// handleRoot 根路径 → 新控制台。
+//
+// ⚠️ **跳转必须带上 query**: 新控制台靠 ?token= 取凭证 ——
+// 丢掉它会让"打开就 401", 而用户只会以为服务坏了。
+//
+// ⚠️ 只有**根路径**跳走, 其余未注册路径照旧 404:
+// 把所有没匹配上的请求都跳成 200, 会把"资源没了"伪装成"页面在"——
+// 那正是这个项目反复栽的那种"静默错误"。
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	target := "/dashboard"
+	if q := r.URL.RawQuery; q != "" {
+		target += "?" + q
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // handleStatus: 状态台 — 当前状态 + 日程 + 最近消息数(管理 Web 首页数据源)

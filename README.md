@@ -118,7 +118,8 @@ env:
 ```bash
 ./convo -config convo.yaml
 # → data/convo-token.txt   (首次运行自动生成)
-# → http://127.0.0.1:8420/dashboard   (管理页, 带 token 打开)
+# → http://127.0.0.1:8420/            (根路径 302 到新控制台, 带 token)
+# → http://127.0.0.1:8420/admin/      (老 UI: 能改东西的那一页)
 ```
 
 ### 数据
@@ -587,7 +588,7 @@ internal/log        日志
 | 改 | `/profile/preview` `/profile/confirm` `/profile/roles` `/boundaries` `/owner_mult` `/member` `/coach` `/slang` `/chime` |
 | 观测 | `/observation` `/bias` `/sparks` `/learned` `/night-peers` `/heat?...` `/feedback-boundaries` |
 | 维护 | `/forget`(遗忘权)、`/stickers*`(表情包库) |
-| 页面 | `/dashboard` |
+| 页面 | `/`(302 → `/dashboard`) · `/dashboard`(新控制台) · `/admin/`(老 UI, 偏编辑) |
 
 ### 14.2 控制台 (`dashboard_html.go`)
 

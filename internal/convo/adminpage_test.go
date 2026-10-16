@@ -11,6 +11,72 @@ import (
 
 // ——— §6.8 管理页 ———
 
+// ——— 根路径 / 老 UI 的两个方向 (2026-10-16 owner 定) ———
+
+// TestRootRedirectsToDashboard_KeepingTheToken
+//
+// ⚠️ 根路径原来是**老 UI 的编译产物**。现在只剩一个 302, 而它必须:
+//  1. 跳到新控制台;
+//  2. **带上 ?token=** —— 丢掉它会让"打开就 401", 而用户只会以为服务坏了。
+func TestRootRedirectsToDashboard_KeepingTheToken(t *testing.T) {
+	s := adminServer(t)
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+
+	cases := []struct{ target, want string }{
+		{"/", "/dashboard"},
+		{"/?token=abc123", "/dashboard?token=abc123"},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(http.MethodGet, c.target, nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusFound {
+			t.Fatalf("%s → %d (想要 302)", c.target, w.Code)
+		}
+		if got := w.Header().Get("Location"); got != c.want {
+			t.Fatalf("%s → Location %q (想要 %q) —— token 在跳转里丢了?", c.target, got, c.want)
+		}
+	}
+}
+
+// TestRoot_UnknownPathsStillFourOhFour
+//
+// ⚠️ 反面: 跳转**只许发生在根路径**。把所有没匹配上的请求都跳成 200,
+// 会把"资源没了"伪装成"页面在"—— 而那正是这个项目反复栽的静默错误。
+func TestRoot_UnknownPathsStillFourOhFour(t *testing.T) {
+	s := adminServer(t)
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+	for _, p := range []string{"/favicon.ico", "/assets/index-DwHHXZZu.js", "/nope"} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code == http.StatusFound {
+			t.Fatalf("%s 被跳走了 —— 只有根路径该跳", p)
+		}
+	}
+}
+
+// TestAdminMount_ServesTheOldUI
+//
+// ⚠️ 老 UI 没被删, 只是挪了位置: 它那一页能**改东西**(人设/边界/梗库/表情包),
+// 而新控制台基本只读 —— 两扇门各有用处。
+func TestAdminMount_ServesTheOldUI(t *testing.T) {
+	s := adminServer(t)
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+	req := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("/admin/ → %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "小夜的事务所") {
+		t.Fatalf("/admin/ 不是老 UI 那一页: %.120s", w.Body.String())
+	}
+}
+
 func adminServer(t *testing.T) *Server {
 	t.Helper()
 	e, _ := groupSpeakEngine(t, &sitCaptureChatter{})
