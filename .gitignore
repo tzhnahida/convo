@@ -1,37 +1,15 @@
-# ——— 旧 VocabLock 应用的东西 (不是 convo, 而且是几百 MB 的重物) ———
-frontend/
-dict/
-pronounce-test/
-admin/
-build/
-
-# ——— 运行期数据 / 产物 ———
-data/
-*.db
-*.db-journal
-*.db-wal
+# ——— 构建产物 ———
 /convo
-convo.new
-*.bak-20*
-*.log
+/convo.exe
+/convo.exe~
+/convo-linux-arm64
+*.exe
+*.exe~
 
-# ——— 助手临时文件 (我改代码时用的脚本; 它们不该进历史) ———
-.*.py
-.*.js
-.*.txt
-.f4.md
-.shot/
-.page-check.js
-.dsh-ops/
-.codegraph/
-
-# ——— 提交信息临时文件 (曾两次被 git add -A 捎进去) ———
-cmsg*.txt
-commitmsg*.txt
-
-# ——— 运行时生成的配置 (base_url 每次跑仿真换一个随机端口) ———
+# ——— 运行时生成的配置 (base_url 每次换随机端口) ———
 internal/sim/app.yaml
 internal/api/app.yaml
 
 # ——— 我改代码时的临时脚本 ———
 *.py
+cmsg*.txt
