@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tzhnahida/convo/internal/clock"
+	"github.com/tzhnahida/convo/internal/log"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -174,6 +175,49 @@ var chimeComplaintMarkers = []string{
 	"别接话", "别搭话", "你插什么",
 }
 
+const (
+	// ChimeComplaintLookback "被说过"要回看多久。
+	ChimeComplaintLookback = 10 * time.Minute
+	// ChimeComplaintMinRecentSelf 回看窗口里它自己至少要说几条, 才算"话多"。
+	//
+	// ⚠️ 2026-10-18 的误判是这条常量存在的唯一理由:
+	// 2026-10-16 00:52 用户 @它说了句「别刷屏闭嘴」, 而它在前两小时里
+	// 在群里只发了 1 条 (用户发了 22 条)。词表命中 → 永久收敛到 1% ——
+	// 它被扣了一顶自己没戴的帽子。**一句话的词不够, 还要看它当时到底在不在说。**
+	ChimeComplaintMinRecentSelf = 3
+)
+
+// noteChimeComplaint 判定并落库"被抱怨过", 返回是否真的记了一笔。
+//
+// 两件事必须同时成立:
+//
+//	① 这条话是在说它 (词 + atSelf, 见 ChimeComplaintHit);
+//	② 它**最近确实在说话** —— 否则「别刷屏」只可能是在说别的 (或者玩笑)。
+//
+// 只判①就是 2026-10-16 那次误判: 它在群里两小时只说了 1 条, 却被永久降级。
+func (e *Engine) noteChimeComplaint(sc SceneMsg, addressed bool) bool {
+	if e.Store == nil || SceneKindOf(sc.SceneKey) != SceneKindGroup {
+		return false
+	}
+	if !ChimeComplaintHit(sc.Text, addressed) {
+		return false
+	}
+	n := e.Store.RecentSelfMsgCount(sc.SceneKey, clock.Now().Add(-ChimeComplaintLookback))
+	if n < ChimeComplaintMinRecentSelf {
+		log.Info("convo:chime", "被抱怨但它最近没在说话 (%d 条/%.0f 分钟) → **不算收敛**: %q",
+			n, ChimeComplaintLookback.Minutes(), truncateRunes(strings.TrimSpace(sc.Text), 40))
+		return false
+	}
+	if err := e.Store.MarkChimeComplaint(e.ownerKey(), sc.SceneKey); err != nil {
+		// ⚠️ 只 warn: 记不上是遗憾, 但**不许**因为它打断这一轮的群裁决。
+		log.Warn("convo:chime", "被抱怨记不上(那条安全阀不生效): %v", err)
+		return false
+	}
+	log.Info("convo:chime", "被说过插话太多 (%d 条/%.0f 分钟) → 随机通道收敛到 %d%%: %q",
+		n, ChimeComplaintLookback.Minutes(), ChimeRollPctAfterComplaint, truncateRunes(strings.TrimSpace(sc.Text), 40))
+	return true
+}
+
 // ChimeComplaintHit 这句话是不是在说它插话太多。
 //
 // ⚠️ 必须**同时**满足: ① 命中抱怨词; ② 这条消息在跟它说话 (被 @ 或点名)。
@@ -225,6 +269,20 @@ func (s *Store) MarkChimeComplaint(owner, sceneKey string) error {
 func (s *Store) ClearChimeComplaint(owner, sceneKey string) error {
 	_, err := s.DB.Exec("UPDATE convo_chime_state SET complained_ts = '' WHERE owner = ? AND scene_key = ?", owner, sceneKey)
 	return err
+}
+
+// RecentSelfMsgCount 这个场景里, 它自己在 since 之后说了几条。
+//
+// ts 在库里是本地时间字符串 (bodyTSLayout), 所以这里也按同一格式传参 ——
+// 用 time.Time 直接比较会让"最近"变成"从 2026 年起"。
+func (s *Store) RecentSelfMsgCount(sceneKey string, since time.Time) int {
+	var n int
+	if s == nil || s.DB == nil {
+		return 0
+	}
+	_ = s.DB.QueryRow("SELECT count(*) FROM convo_messages WHERE scene_key = ? AND dir = 'ai' AND ts >= ?",
+		sceneKey, since.Format(bodyTSLayout)).Scan(&n)
+	return n
 }
 
 // ChimeComplained 这个群有没有抱怨过。

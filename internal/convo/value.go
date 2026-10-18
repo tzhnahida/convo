@@ -434,12 +434,10 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 	// 这里不重复判 —— 只看场景是不是群。
 	// ⚠️ 更要紧的是那个反面: 群友 A 对群友 B 说「你话真多」**绝不许**算到它头上,
 	// 那会让它在**没人说它的时候自我禁言**, 而没有任何人知道为什么。
-	if SceneKindOf(sc.SceneKey) == SceneKindGroup && ChimeComplaintHit(sc.Text, addressed) {
-		if err := e.Store.MarkChimeComplaint(e.ownerKey(), sc.SceneKey); err != nil {
-			// ⚠️ 只 warn: 记不上是遗憾, 但**不许**因为它打断这一轮的群裁决。
-			log.Warn("convo:chime", "被抱怨记不上(那条安全阀不生效): %v", err)
-		}
-	}
+	// ⚠️ 判定收进 noteChimeComplaint 了 —— 它多要一条事实依据:
+	// **它最近确实在说话**。只认词表的版本在 2026-10-16 误判过一次
+	// (它两小时只说 1 条, 却因为一句「别刷屏闭嘴」被永久降级)。
+	e.noteChimeComplaint(sc, addressed)
 
 	switch {
 	case why == ReasonAtSelf:

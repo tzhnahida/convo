@@ -56,6 +56,7 @@ func TestChimeComplaint_TowardsSelfLands(t *testing.T) {
 	if got, _ := e.Store.ChimeComplained(e.ownerKey(), chimeTestScene); got {
 		t.Fatal("一开始就说被抱怨过了")
 	}
+	seedChatty(t, e, chimeTestScene) // 前提: 它当时确实在说话
 	chimeSay(t, e, "111", "别刷屏了", true)
 	if got, _ := e.Store.ChimeComplained(e.ownerKey(), chimeTestScene); !got {
 		t.Fatal("**被 @ 着说「别刷屏」却没有落库** —— 那条安全阀是空的")
@@ -80,6 +81,9 @@ func TestChimeComplaint_NotTowardsSelfDoesNotLand(t *testing.T) {
 	if err := EnsureChimeSchema(e.Store.DB); err != nil {
 		t.Fatal(err)
 	}
+	// ⚠️ 先让它话多 —— 这样下面"不落库"的唯一原因就只剩"没 @ 它"。
+	// 不补这条前提的话, 用例会因为"它没在说话"而通过, 而不是因为"没人说它"。
+	seedChatty(t, e, chimeTestScene)
 	// ① 群友之间互喷: 没有 @ 它。
 	chimeSay(t, e, "111", "你话真多", false)
 	if got, _ := e.Store.ChimeComplained(e.ownerKey(), chimeTestScene); got {
@@ -133,6 +137,12 @@ func TestChimeComplaint_DecideChimeSeesIt(t *testing.T) {
 	in := ChimeInput{Roll: 5, WakingElapsed: 1.0}
 	if d := DecideChime(in); !d.Speak {
 		t.Fatal("没被抱怨过、掷中 5 却不插话 —— 夹具不对")
+	}
+	// 夹具: 它当时**确实在说话** (2026-10-18 起"被说过"多要这条事实依据)。
+	for i := 0; i < ChimeComplaintMinRecentSelf; i++ {
+		if _, err := e.Store.InsertMessageFull("ai", "qq", "text", "随便说说", MsgMeta{SceneKey: chimeTestScene}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	chimeSay(t, e, "111", "别刷屏", true)
 	complained, err := e.Store.ChimeComplained(e.ownerKey(), chimeTestScene)

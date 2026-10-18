@@ -20,7 +20,14 @@ func TestChimeClear_ReleasesTheScene(t *testing.T) {
 		t.Fatal(err)
 	}
 	scene := chimeTestScene
-	// 先让它被抱怨一次(走生产路径)。
+	// 夹具: 它**当时确实在说话** —— 2026-10-18 起判据多要这条事实依据
+	// (2026-10-16 那次误判的成因正是"它两小时只说 1 条, 却被一句「别刷屏」永久降级")。
+	for i := 0; i < ChimeComplaintMinRecentSelf; i++ {
+		if _, err := e.Store.InsertMessageFull("ai", "qq", "text", "随便说说", MsgMeta{SceneKey: scene}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 再让它被抱怨一次(走生产路径)。
 	chimeSay(t, e, "111", "别刷屏", true)
 	if got, _ := e.Store.ChimeComplained(e.ownerKey(), scene); !got {
 		t.Fatal("夹具坏了: 应当已经被抱怨过")
@@ -82,6 +89,7 @@ func TestChimeClear_ThenItCanBeComplainedAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	scene := chimeTestScene
+	seedChatty(t, e, scene)
 	chimeSay(t, e, "111", "别刷屏", true)
 	if err := e.Store.ClearChimeComplaint(e.ownerKey(), scene); err != nil {
 		t.Fatal(err)
