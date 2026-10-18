@@ -785,7 +785,13 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 	}
 	if err == nil {
 		NoteRepeatHits(in.History, FrameText(frame)) // 指标: 仍命中"最近反复提过"的实体
-		if violations := d.ValidateFrame(frame, in, p); len(violations) == 0 {
+		violations := d.ValidateFrame(frame, in, p)
+		// 整句复读 (§3.6.8 的缺口): 只在**整条回复都是复读**时才算违规 ——
+		// 那种情况重生成一次有意义; 部分复读在出口处静默剔掉就行。
+		if echo := d.selfEchoViolation(frame); echo != "" {
+			violations = append(violations, echo)
+		}
+		if len(violations) == 0 {
 			noteFirstPass()
 			return frame, nil
 		} else {
@@ -799,7 +805,11 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 			if frame2, raw2, err2 := d.tryReply(ctx, c, system+fix, user); err2 == nil {
 				raw = raw2
 				rawForTrace = raw2
-				if v2 := d.ValidateFrame(frame2, in, p); len(v2) == 0 {
+				v2 := d.ValidateFrame(frame2, in, p)
+				if echo := d.selfEchoViolation(frame2); echo != "" {
+					v2 = append(v2, echo)
+				}
+				if len(v2) == 0 {
 					noteRetryOK()
 					return frame2, nil
 				} else {

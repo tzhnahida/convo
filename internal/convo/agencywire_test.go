@@ -42,11 +42,11 @@ func TestBuildSystem_DefianceReachesPrompt(t *testing.T) {
 		Agency:   &AgencyContext{Defiance: DefyRefuse, Stance: "不喜欢逛街", TopicKey: "逛街"},
 	}
 	sys := d.buildSystem(in, p, "ja")
-	if !strings.Contains(sys, "【这件事你可以不接受】") {
+	if !strings.Contains(sys, "【这一轮你可以不那么配合】") {
 		t.Fatal("违抗许可没进提示词 —— 机制等于没接线")
 	}
 	iTopic := strings.Index(sys, "【本轮话题】")
-	iDefy := strings.Index(sys, "【这件事你可以不接受】")
+	iDefy := strings.Index(sys, "【这一轮你可以不那么配合】")
 	if iTopic < 0 || iDefy < 0 || iDefy < iTopic {
 		t.Fatalf("违抗段必须在【本轮话题】之后 (轮级), 实际 topic=%d defy=%d", iTopic, iDefy)
 	}
@@ -57,7 +57,7 @@ func TestBuildSystem_NoAgencyNoDefiance(t *testing.T) {
 	d := &DialogEngine{}
 	p := &PersonaProfile{Name: "小夜", Template: "bestie"}
 	sys := d.buildSystem(DialogInput{UserText: "陪我去逛街吧", Topic: Topic{Kind: "life", Text: "计划"}}, p, "ja")
-	if strings.Contains(sys, "【这件事你可以不接受】") {
+	if strings.Contains(sys, "【这一轮你可以不那么配合】") {
 		t.Fatal("没给许可却注入了违抗段")
 	}
 }

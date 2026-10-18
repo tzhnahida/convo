@@ -870,6 +870,11 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 	if err == nil {
 		e.Dialog.SideEffects(frame, in, p)
 		e.Dialog.ValidateFrame(frame, in, p) // 校验已在 Reply 内做 — 此处仅日志
+		// 整句复读闸 (§3.6.8 的缺口, 2026-10-18 补): 现有的 repeat.go 统计的是
+		// 片段出现 ≥3 次, 治不了"整句照抄自己"——「我脑子也还没转过来」隔 4 分钟说两遍,
+		// 片段计数各自只有 1-2, 那条闸一声不响。放在**出口**而不是提示词里:
+		// 能把的住复读的只有"发之前比一遍"。
+		frame = e.dropSelfEcho(frame)
 	}
 	return frame, err
 }
@@ -1223,6 +1228,17 @@ func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
 //
 // 群场景的主动行为走 SpeakInGroup, 那条路自带 groupID。
 func (e *Engine) proactive(ctx context.Context, p *PersonaProfile, in DialogInput, counter, day string) error {
+	// §6.10 场景隔离: **空场景 = 私聊, 必须在这里归一**, 不能留给 recentDialogIn。
+	//
+	// 空串会让 L1 退回**全局历史** (群 + 私混在一起), 而这个出口固定是私聊 ——
+	// 2026-10-18 实测: action=preview、scene_key 空, 它在私聊里接着说群里的
+	// 「26 层楼梯」("26层……我爬6层就得歇会儿了"), 用户看到的就是"群私不分"。
+	//
+	// ⚠️ 下面那行护栏只拦**别的**场景, 拦不住空: 空不是违规, 是**没指定**。
+	// 真要收紧就得在这里归一, 而不是在 10 个调用点各写一遍。
+	if in.SceneKey == "" {
+		in.SceneKey = DefaultSceneKey
+	}
 	if in.SceneKey != "" && in.SceneKey != DefaultSceneKey {
 		log.Error("convo:engine", "场景一致性违反: proactive 是私聊出口, 却拿到场景 %q — 本条不发", in.SceneKey)
 		return nil
