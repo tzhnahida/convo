@@ -23,7 +23,7 @@ type VisionScorer interface {
 	Score(ctx context.Context, imagePath string) (score float64, nsfw bool, note string, err error)
 }
 
-// DeepSeekScorer 用 deepseek-v4-flash-vision-exp (同 key, ~0.001 元/图; ⚠️ Exp 实验态)。
+// DeepSeekScorer 用多模态模型打分 (deepseek-flash, 同 key; 旧 experimental 视觉模型已退役)。
 type DeepSeekScorer struct {
 	Client *ai.Client
 	Model  string

@@ -283,7 +283,7 @@ func (e *Engine) runLearning(ctx context.Context, p *PersonaProfile) error {
 	// ⚠️ system 那一格原来是**空的**: 两步都把 user 提示词塞进 system, 而 `learnSystemPrompt`
 	// (它写着最终的 JSON 契约 kind/topic/content/origin, 与 `ParseLearnedItem` 一一对应)
 	// **零调用**。⇒ 模型从来没有拿到过"你是谁、现在是你的私人时间、不许编造亲身经历"那一段。
-	out2, derr := e.Chatter.Chat(ctx, learnSystemPrompt(p, trail), learnDigestPrompt(p, query, FormatHits(hits, 5)))
+	out2, derr := e.thinker().Chat(ctx, learnSystemPrompt(p, trail), learnDigestPrompt(p, query, FormatHits(hits, 5)))
 	if derr != nil {
 		log.Warn("convo:learn", "消化失败 (今夜不产出碎片): %v", derr)
 		return nil

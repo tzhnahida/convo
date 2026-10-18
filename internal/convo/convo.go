@@ -76,12 +76,16 @@ type Engine struct {
 	// PokeRollFn 戳一戳掷骰 (回不回、怎么回), nil = Dice。**测试注入用**。
 	PokeRollFn func(n int) int
 
-	Store   *Store
-	Cfg     Config
-	Sched   *Scheduler
-	Dialog  *DialogEngine
-	Sender  Sender
+	Store  *Store
+	Cfg    Config
+	Sched  *Scheduler
+	Dialog *DialogEngine
+	Sender Sender
+	// Chatter 是**交互级**模型: 用户正在等, 思考关闭 (temperature 才生效)。
 	Chatter Chatter
+	// Thinker 是**后台级**模型: 没人等, 开思考换质量 (做梦/日计划/世界事件/学习摘要)。
+	// nil = 退回 Chatter —— 没配就是升级前的行为, 一个字都不变。
+	Thinker Chatter
 	UserID  int64  // owner QQ (消息对象)
 	Lang    string // 目标语言 (默认 ja)
 	Cycle   *StickerCycle
@@ -443,6 +447,20 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 	// (挂 tick 上会变成「没事找事地宣布自己去忙了」)。
 	e.maybeSuspend(ctx, now)
 	return nil
+}
+
+// thinker 选**后台生成**用的模型: 配了就用配的, 没配就退回 Chatter。
+//
+// ⚠️ 两条口径必须分开, 不能合并成一个 client:
+//   - 交互级 (用户等) 关思考 —— 思考模式下 temperature 静默失效, 而拟人化抖动全靠它;
+//   - 后台级 (没人等) 开思考 —— 多几秒换一份更像样的日计划/世界事件, 值。
+//
+// 一个 client 只能选一边, 于是总有一边在吃亏。
+func (e *Engine) thinker() Chatter {
+	if e.Thinker != nil {
+		return e.Thinker
+	}
+	return e.Chatter
 }
 
 // recentDialog 取最近 N 条对话组装 L1 历史文本 ("你:/她:" 前缀, 保持上下句联系)。
@@ -1687,7 +1705,7 @@ func (e *Engine) prepareDailyJobs(at time.Time) {
 	if e.Chatter != nil {
 		if env, ok := TodayEnv(); ok {
 			if p, perr := e.Store.LoadProfile(); perr == nil && p != nil {
-				pool, gerr := GenerateNightPool(ctx, e.Chatter, e.Store, env, p, clock.Now())
+				pool, gerr := GenerateNightPool(ctx, e.thinker(), e.Store, env, p, clock.Now())
 				if gerr != nil {
 					log.Warn("convo:engine", "事件池生成失败(连模板都没给出来): %v", gerr)
 				} else if _, serr := e.Store.SeedDrafts(pool); serr != nil {

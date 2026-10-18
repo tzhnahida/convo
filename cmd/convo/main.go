@@ -104,17 +104,31 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 模块 5 前置: AI client (chat) — 未配置 key 时 Chatter=nil, 对话接口降级
-	var chatter convo.Chatter
+	// 模块 5 前置: AI client — 未配置 key 时 Chatter=nil, 对话接口降级。
+	//
+	// ⚠️ **两个 client, 两种思考模式** (2026-10-18), 不是一个 client 两用:
+	//   chatter: 用户在等 → 关思考。思考模式下 temperature 静默失效,
+	//            而拟人化的抖动全押在 temperature 上 (系统骰子只决定"说不说")。
+	//   thinker: 没人等 (做梦 / 日计划 / 世界事件 / 学习摘要) → 开思考换质量,
+	//            多几秒无所谓, 而且这些任务不需要"随机感"。
+	var chatter, thinker convo.Chatter
 	if cfg.AI.APIKey != "" {
 		c := ai.NewClient(ai.Config{
-			BaseURL: cfg.AI.BaseURL,
-			APIKey:  cfg.AI.APIKey,
-			Model:   cfg.AI.Model,
-			Timeout: 120 * time.Second,
+			BaseURL:         cfg.AI.BaseURL,
+			APIKey:          cfg.AI.APIKey,
+			Model:           cfg.AI.Model,
+			Timeout:         120 * time.Second,
+			DisableThinking: true,
 		})
 		chatter = convo.AIAdapter{C: c}
-		log.Info("convo", "ai: configured (%s)", cfg.AI.Model)
+		tc := ai.NewClient(ai.Config{
+			BaseURL: cfg.AI.BaseURL,
+			APIKey:  cfg.AI.APIKey,
+			Model:   cfg.AI.ThinkModel,
+			Timeout: 180 * time.Second, // 思考模式慢, 但它是后台任务, 给足
+		})
+		thinker = convo.AIAdapter{C: tc}
+		log.Info("convo", "ai: chat=%s (思考关, 保 temperature) · think=%s (思考开)", cfg.AI.Model, cfg.AI.ThinkModel)
 	} else {
 		log.Warn("convo", "ai: 未配置 API key (env CONVO_AI_KEY) — 试跑将无法生成对话")
 	}
@@ -132,6 +146,7 @@ func main() {
 		Sched:   sched,
 		Dialog:  dialog,
 		Chatter: chatter,
+		Thinker: thinker,
 		UserID:  parseQQ(cfg.Channel.OwnerQQ),
 		Lang:    cfg.Stickers.Lang,
 	}

@@ -15,7 +15,7 @@ import (
 
 // ——— 多模态 (vision) 调用 — 附加式扩展, 主程序原行为不受影响 ———
 // OpenAI-compatible content parts: [{type:"text"},{type:"image_url"}]
-// 用途: convo 表情包 vision 打分 (deepseek-v4-flash-vision-exp 等)。
+// 用途: convo 表情包 vision 打分 (deepseek-flash 等, 原生多模态)。
 
 // mimeFromPath 取真实 MIME —— **内容优先, 扩展名只做兜底**。
 //

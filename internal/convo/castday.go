@@ -227,7 +227,7 @@ func (e *Engine) maybeRefreshCastStatus(ctx context.Context, p *PersonaProfile) 
 	if env, eok := TodayEnv(); eok {
 		envLine = fmt.Sprintf("%s %s %d°C", env.City, env.Weather, env.TempC)
 	}
-	nb, gen := RefreshCastStatus(ctx, e.Chatter, p, b, day, envLine)
+	nb, gen := RefreshCastStatus(ctx, e.thinker(), p, b, day, envLine)
 	if !gen {
 		return
 	}

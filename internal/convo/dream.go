@@ -133,7 +133,7 @@ func (e *Engine) MakeDream(ctx context.Context, night string, moodAmp float64, m
 		"2. 只输出那句话, 不要引号、不要解释;\n" +
 		"3. 内容克制 —— 噩梦也不许出现「你离开我」这类指向具体关系的话。\n\n" +
 		"今天的碎片:\n" + b.String()
-	out, err := e.Chatter.Chat(ctx, prompt, "")
+	out, err := e.thinker().Chat(ctx, prompt, "")
 	if err != nil {
 		log.Warn("convo:dream", "做梦失败 (今夜不做梦, 不编): %v", err)
 		return Dream{}, false, nil

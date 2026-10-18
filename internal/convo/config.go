@@ -259,9 +259,18 @@ func (c ImageSourceConfig) VisionRequiredOn() bool {
 }
 
 type AIConfig struct {
-	BaseURL     string `yaml:"base_url"`
-	APIKey      string `yaml:"api_key"` // env CONVO_AI_KEY overrides
-	Model       string `yaml:"model"`   // chat model, e.g. deepseek-chat
+	BaseURL string `yaml:"base_url"`
+	APIKey  string `yaml:"api_key"` // env CONVO_AI_KEY overrides
+
+	// Model 是**交互级**模型 (用户正在等)。思考关闭 —— 只有关掉 thinking,
+	// temperature 才真的生效, 而那正是拟人化抖动的来源 (2026-10-18 定)。
+	Model string `yaml:"model"`
+
+	// ThinkModel 是**后台级**模型 (做梦 / 日计划 / 世界事件 / 学习摘要):
+	// 没有人在等, 允许开思考换质量。空 = 与 Model 相同。
+	ThinkModel string `yaml:"think_model"`
+
+	// VisionModel 看图用的模型。flash 系列原生支持图像输入, 默认与 Model 相同。
 	VisionModel string `yaml:"vision_model"`
 }
 
@@ -325,8 +334,10 @@ func DefaultConfig() Config {
 		DataDir: "data",
 		DBFile:  "convo-trial.db",
 		AI: AIConfig{
-			BaseURL: "https://api.deepseek.com",
-			Model:   "deepseek-chat",
+			BaseURL:     "https://api.deepseek.com",
+			Model:       "deepseek-flash", // V4.1-Flash; deepseek-chat 已下线
+			ThinkModel:  "deepseek-flash", // 后台生成: 同模型, 开思考
+			VisionModel: "deepseek-flash", // 原生多模态, 不再需要 experimental 视觉模型
 		},
 		Channel: ChannelConfig{
 			Driver:   "noop",
@@ -397,8 +408,18 @@ func Load(path string) (Config, error) {
 	if cfg.AI.BaseURL == "" {
 		cfg.AI.BaseURL = "https://api.deepseek.com"
 	}
+	// 模型档位 (2026-10-18 更新; `deepseek-chat` 已从 /models 下线):
+	//   deepseek-flash  = V4.1-Flash, 1M 上下文, **原生支持图像输入**
+	//   deepseek-v4-pro = V4-Pro, 1M 上下文, 纯文本
+	// 对话用 flash: 快、便宜、自带多模态 —— 词表外的 experimental 视觉模型可以退役。
 	if cfg.AI.Model == "" {
-		cfg.AI.Model = "deepseek-chat"
+		cfg.AI.Model = "deepseek-flash"
+	}
+	if cfg.AI.ThinkModel == "" {
+		cfg.AI.ThinkModel = cfg.AI.Model
+	}
+	if cfg.AI.VisionModel == "" {
+		cfg.AI.VisionModel = cfg.AI.Model
 	}
 	if cfg.Sched.TickEverySec <= 0 {
 		cfg.Sched.TickEverySec = 60

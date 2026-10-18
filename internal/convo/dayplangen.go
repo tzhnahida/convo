@@ -245,7 +245,7 @@ func (e *Engine) planTomorrow(ctx context.Context, p *PersonaProfile, nightNotes
 	now := clock.Now()
 	day := TomorrowKey(now)
 	in := buildDayPlanInput(e.Store, e.ownerKey(), day, p, nightNotes, ws)
-	plan, gerr := GenerateDayPlan(ctx, e.Chatter, in, ws)
+	plan, gerr := GenerateDayPlan(ctx, e.thinker(), in, ws)
 	if gerr != nil {
 		log.Warn("convo:dayplan", "§4.5 明天(%s)不排行程: %v", day, gerr)
 		return

@@ -84,8 +84,9 @@ db_file: "convo-trial.db"
 ai:
   base_url: "https://api.deepseek.com"
   api_key: "sk-..."            # 也可用环境变量 CONVO_AI_KEY 覆盖
-  model: "deepseek-chat"
-  vision_model: "..."          # 可选: 用户发图时看图说话
+  model: "deepseek-flash"      # 对话: 思考关闭 —— 否则 temperature 失效 (拟人化抖动全靠它)
+  think_model: "deepseek-flash" # 后台生成(做梦/日计划/世界事件): 开思考换质量; 空 = 同 model
+  vision_model: "deepseek-flash" # 原生支持图像输入
 
 channel:
   driver: "onebot_v11"         # "noop" = 不连 IM,只跑引擎(仿真/测试)
