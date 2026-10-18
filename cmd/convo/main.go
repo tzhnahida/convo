@@ -141,14 +141,23 @@ func main() {
 
 	// 模块 3+5 编排器
 	engine := &convo.Engine{
-		Store:   store,
-		Cfg:     cfg,
-		Sched:   sched,
-		Dialog:  dialog,
-		Chatter: chatter,
-		Thinker: thinker,
-		UserID:  parseQQ(cfg.Channel.OwnerQQ),
-		Lang:    cfg.Stickers.Lang,
+		Store:    store,
+		Cfg:      cfg,
+		Sched:    sched,
+		Dialog:   dialog,
+		Chatter:  chatter,
+		Thinker:  thinker,
+		UserID:   parseQQ(cfg.Channel.OwnerQQ),
+		Lang:     cfg.Stickers.Lang,
+		Reviewer: thinker, // 审核用开思考的那一档 (判"踩没踩红线"是推理活)
+	}
+	// 审核机: 每条输出在发出去之前过一遍 (人设 + 教练规则 + 这一轮上下文)。
+	// ⚠️ 一次性注入 —— 对话是并发 goroutine, 每轮赋值会是数据竞争。
+	dialog.Review = engine.ReviewFrame
+	if cfg.Review.Enabled {
+		log.Info("convo", "review: 已开 (每条输出过审; 打回带原因重生成一次; 失败放行)")
+	} else {
+		log.Info("convo", "review: 关闭 (config review.enabled=false)")
 	}
 	// §5.1 人物层回填 (带真实 uin): OpenStore 那次拿不到 owner_qq,
 	// 于是默认私聊那一行的历史只能在这里补 —— 同一个人不许变成两笔账。

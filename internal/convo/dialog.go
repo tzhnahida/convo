@@ -195,6 +195,12 @@ type DialogEngine struct {
 	ImagePath string
 	// StickerExists 由 stickers.go 提供 (见模块 8); 此处接口化避免循环依赖。
 	StickerExists func(id int64) bool
+	// Review 审核机入口 —— 由 Engine 在启动时一次性注入 (nil = 不审)。
+	//
+	// ⚠️ 用**函数字段**而不是让 DialogEngine 拿一份 Engine:
+	// 这一层不该知道 config / 教练规则 / 计数器那些事, 它只负责"判一下就回来"。
+	// 测试里构造 DialogEngine 时留空即可 —— 审核机不参与任何既有用例。
+	Review func(ctx context.Context, in DialogInput, p *PersonaProfile, frame OutputFrame) Verdict
 }
 
 func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang string) string {
@@ -791,6 +797,14 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 		if echo := d.selfEchoViolation(frame); echo != "" {
 			violations = append(violations, echo)
 		}
+		// 审核机: 人设 + 教练规则 + 这一轮上下文 → 过 / 不过。
+		// 不过就走**同一条重试链** (原因会进【修正】那一句), 仍不过才不发。
+		// ⚠️ 只在规则层已经通过时才审 —— 硬拒的句子没必要再花一次调用。
+		if len(violations) == 0 && d.Review != nil {
+			if v := d.Review(ctx, in, p, frame); !v.OK {
+				violations = append(violations, "审核机打回: "+v.Reason)
+			}
+		}
 		if len(violations) == 0 {
 			noteFirstPass()
 			return frame, nil
@@ -808,6 +822,11 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 				v2 := d.ValidateFrame(frame2, in, p)
 				if echo := d.selfEchoViolation(frame2); echo != "" {
 					v2 = append(v2, echo)
+				}
+				if len(v2) == 0 && d.Review != nil {
+					if v := d.Review(ctx, in, p, frame2); !v.OK {
+						v2 = append(v2, "审核机打回: "+v.Reason)
+					}
 				}
 				if len(v2) == 0 {
 					noteRetryOK()

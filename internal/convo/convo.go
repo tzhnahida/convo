@@ -86,9 +86,12 @@ type Engine struct {
 	// Thinker 是**后台级**模型: 没人等, 开思考换质量 (做梦/日计划/世界事件/学习摘要)。
 	// nil = 退回 Chatter —— 没配就是升级前的行为, 一个字都不变。
 	Thinker Chatter
-	UserID  int64  // owner QQ (消息对象)
-	Lang    string // 目标语言 (默认 ja)
-	Cycle   *StickerCycle
+	// Reviewer 是**审核机**: 每条输出发出去之前, 拿 人设 + 教练规则 判"过/不过"。
+	// nil = 退回 Thinker (见 review.go 的 reviewer())。
+	Reviewer Chatter
+	UserID   int64  // owner QQ (消息对象)
+	Lang     string // 目标语言 (默认 ja)
+	Cycle    *StickerCycle
 
 	// ImageFetch 触发桥接方下载一张图 (可选)。nil = 不主动取, 只认已在盘上的。
 	//

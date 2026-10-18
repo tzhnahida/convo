@@ -41,6 +41,26 @@ type Config struct {
 	// ⚠️ 默认 `enabled: false` —— 代码先上船, 线上一个动作都不发生。
 	// 开了之后: 头像/说说/群名片**由它自己判** (视觉闸 + 它自己的 YES/NO), 决策理由全部落库。
 	SelfExpress SelfExpressConfig `yaml:"self_express"`
+	// 审核机: 每条输出在发出去之前过一遍"人设 + 规则"的判定。
+	// ⚠️ 与 coach.go 的「教练: 规则」不是一回事 —— 那是**规则从哪来**, 这是**规则怎么用**。
+	Review ReviewConfig `yaml:"review"`
+}
+
+// ReviewConfig 审核机 (输出前的第二双眼睛)。
+//
+// 一次审核 = 一次模型调用。默认**开** (owner 2026-10-18 要的), 但它永远 fail-open:
+// 超时/挂了/输出看不懂 → 放行。真红线在 hardreject.go, 这里是质量闸门。
+type ReviewConfig struct {
+	Enabled    bool `yaml:"enabled"`
+	TimeoutSec int  `yaml:"timeout_sec"` // 默认 20
+}
+
+// Normalized 零值纪律: 缺省 = 内置默认。
+func (c ReviewConfig) Normalized() ReviewConfig {
+	if c.TimeoutSec <= 0 {
+		c.TimeoutSec = 20
+	}
+	return c
 }
 
 // PokeConfig 戳一戳。
@@ -339,6 +359,8 @@ func DefaultConfig() Config {
 			ThinkModel:  "deepseek-flash", // 后台生成: 同模型, 开思考
 			VisionModel: "deepseek-flash", // 原生多模态, 不再需要 experimental 视觉模型
 		},
+		// 审核机默认开 —— 它只在有文本可审时花一次调用, 且永远 fail-open。
+		Review: ReviewConfig{Enabled: true},
 		Channel: ChannelConfig{
 			Driver:   "noop",
 			APIBase:  "http://127.0.0.1:3001",
@@ -421,6 +443,7 @@ func Load(path string) (Config, error) {
 	if cfg.AI.VisionModel == "" {
 		cfg.AI.VisionModel = cfg.AI.Model
 	}
+	cfg.Review = cfg.Review.Normalized()
 	if cfg.Sched.TickEverySec <= 0 {
 		cfg.Sched.TickEverySec = 60
 	}
