@@ -54,6 +54,18 @@ func EventClass(ev WorldEvent) string {
 
 // CheckEventBudget §3.5 的三条: 大事件/周 · 小事件/周 · 同类冷却。
 func (s *Store) CheckEventBudget(ev WorldEvent, now time.Time) EventBudgetVerdict {
+	// ⚠️ **背景压力不占事件配额** —— 它是"今天一整天的底色", 不是"发生了某件事"。
+	//
+	// 2026-10-17~20 实测: mood_log 停在 10-16 再没动过。根因就在这一行之前 ——
+	// EnvEvents 给天气事件的 Intensity 是 **1.0**(那是"权重满", 不是"强度大"),
+	// 于是每天那条天气被当成"大事件", 一周只准进一条, 剩下六天全被
+	// "这周已经有过 1 件大事" 挡掉。心情于是冻住, 而它**看起来像没配置**。
+	//
+	// 与 IngestWorldEvents 的分工一致: background 走的是 BgValence 底色通道,
+	// 本来就不该和"家人住院"这种脉冲事件抢同一个配额。
+	if ev.Duration == "background" {
+		return EventBudgetVerdict{Allow: true}
+	}
 	week := now.AddDate(0, 0, -7)
 	major, minor, err := s.countEventsSince(week)
 	if err != nil {

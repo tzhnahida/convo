@@ -30,6 +30,32 @@ func evAt(text string, intensity float64, ts time.Time) WorldEvent {
 	}
 }
 
+// TestEventBudget_BackgroundBypassesQuota
+//
+// ⚠️ 2026-10-17~20 的生产事故: 天气事件(Intensity 1.0 + Duration "background")
+// 被当成大事件, 一周只进一条 → mood_log 冻在 10-16, 心情再也不动。
+// 背景压力是"底色", 不该和脉冲事件抢配额。
+func TestEventBudget_BackgroundBypassesQuota(t *testing.T) {
+	s, now := budgetFixture(t)
+	// 先把这周的大事件额度用掉。
+	if _, err := s.IngestWorldEvents([]WorldEvent{evAt("家人住院了", 0.8, now.Add(-2*time.Hour))}); err != nil {
+		t.Fatal(err)
+	}
+	// 脉冲事件 → 必须被挡 (原有行为不许退化)。
+	if v := s.CheckEventBudget(evAt("又住院了", 0.8, now), now); v.Allow {
+		t.Fatal("大事件配额失效了")
+	}
+	// 背景天气 → 必须放行。
+	bg := WorldEvent{
+		TS: now.Format(bodyTSLayout), Kind: "environment", Source: "天气",
+		Text: "今天晴天", Valence: 0.15, Arousal: 0.5, Intensity: 1.0,
+		Weight: 1.0, Duration: "background",
+	}
+	if v := s.CheckEventBudget(bg, now); !v.Allow {
+		t.Fatalf("背景压力被事件配额挡住了 (%s) —— 心情又会冻住", v.Reason)
+	}
+}
+
 // TestEventBudget_MajorIsOnePerWeek
 //
 // ⚠️ §3.5-① 大事件 ≤1/周。没有它, 一周里能出现三场"家人住院"。
