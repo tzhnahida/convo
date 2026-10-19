@@ -129,29 +129,6 @@ func AllShort(history string, minLong int) bool {
 	return true
 }
 
-// lastAILines 摘最近几条"她:"的开头, 用于提示"别再用这种说法"。
-func lastAILines(history string, n int) string {
-	var out []string
-	for _, ln := range strings.Split(history, "\n") {
-		s := strings.TrimSpace(ln)
-		if !strings.HasPrefix(s, "她: ") {
-			continue
-		}
-		r := []rune(strings.TrimPrefix(s, "她: "))
-		if len(r) > 12 {
-			r = append(r[:12], '…')
-		}
-		out = append(out, string(r))
-	}
-	if len(out) == 0 {
-		return ""
-	}
-	if len(out) > n {
-		out = out[len(out)-n:]
-	}
-	return "(别再用这种说法: " + strings.Join(out, " / ") + ")"
-}
-
 // FrameText 拼出帧里的全部文本 (指标与校验共用)。
 func FrameText(f OutputFrame) string {
 	var b strings.Builder

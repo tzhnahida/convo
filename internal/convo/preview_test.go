@@ -18,16 +18,24 @@ func TestPreview_NamesTheNextSlotNotTheCurrent(t *testing.T) {
 		PreviewAt:   "07:30",
 	}, p, "ja")
 	if !strings.Contains(sys, "07:30") || !strings.Contains(sys, "忙正事") {
-		t.Fatalf("预告没说清下一格是什么:\n%s", sys)
+		t.Fatalf("预告没说清下一格是什么: %s", sys)
 	}
 	if strings.Contains(sys, "马上要去「") {
-		t.Fatalf("还在用旧措辞 (把时间区间当目的地):\n%s", sys)
+		t.Fatalf("还在用旧措辞 (把时间区间当目的地): %s", sys)
+	}
+
+	// ⚠️ 2026-10-19: 预告曾把最近三句旧话递进提示词, 于是它开口就翻昨天的账。
+	if strings.Contains(sys, "别再用这种说法") {
+		t.Fatalf("预告又把旧话题递到嘴边了: %s", sys)
+	}
+	if !strings.Contains(sys, "别接着之前的旧话题") {
+		t.Fatalf("预告没有禁止翻旧账: %s", sys)
 	}
 
 	// 反方向: 下一个槽是睡 → 就该说睡。
 	sys2 := d.buildSystem(DialogInput{ActionKind: ActPreview, State: StateFree, PreviewNext: StateSleep}, p, "ja")
 	if !strings.Contains(sys2, "该睡了") {
-		t.Fatalf("睡前预告没说该睡了:\n%s", sys2)
+		t.Fatalf("睡前预告没说该睡了: %s", sys2)
 	}
 }
 

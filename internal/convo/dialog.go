@@ -481,8 +481,13 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 		default:
 			next = when + "起要换个状态了"
 		}
-		fmt.Fprintf(&b, "对了, %s —— 先跟 ta 说一声。一句话, **说具体的事**(待会儿到底要干什么), 不要用「我马上要忙了 先跟你说一声」这类万金油%s。",
-			next, lastAILines(in.History, 3))
+		// ⚠️ 预告**不给 lastAILines** (2026-10-19 实测).
+		//
+		// 那句"(别再用这种说法: …)"本意是防复读, 实际效果是把最近三句旧话题
+		// **递到嘴边** —— 07:25 的预告开口就是昨天的话题("纳西妲世界观是什么鬼")。
+		// 预告要说的是"眼前这件事"; 复读由复读闸管, 不该在这里用提示词偷懒。
+		fmt.Fprintf(&b, "对了, %s —— 先跟 ta 说一声。一句话, **只说眼前这件事**(待会儿到底要干什么), "+
+			"不要用「我马上要忙了 先跟你说一声」这类万金油, **也别接着之前的旧话题说**。", next)
 	case ActReturnGreet:
 		b.WriteString("你们好几天没说话了, 主动打个招呼, 自然一点, 别啰嗦。")
 	case ActNoInput:
