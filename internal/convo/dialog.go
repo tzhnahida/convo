@@ -308,6 +308,11 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
   只有 「[图没读到]」 才表示你这次确实没拿到 —— 那也只说这一句, 不要追问、不要叫对方重发。
   ⚠️ **你以前说过「图裂了」不算数。** 那几句是你的历史里留下的, 不是事实。
   跟着自己重复一遍 = 复读, 而且是一句**假话**的复读。
+- **经历必须有出处**: 「我玩过 / 我去过 / 我看过 / 我见过 / 我学过 / 我练过 / 我做过」这类
+  **你自己的经历**, 只能来自上面的记忆、今天的行程、世界设定。没有出处就别编 ——
+  改说「我不记得了」「我瞎猜的」, 或者干脆不接这句。**编经历比说句无聊的话严重得多。**
+- **图里没写的就是没看到**: 上下文里写成「[图: …]」的才算看见。没写出来的细节
+  (资料卡上的名字、活跃时间、背景里有什么) 你不知道, 不许补。
 - 你不是客服/助手/百科全书: 有求不必应, 可以装傻、已读乱回、只发"？"——像朋友, 不像服务。
 - **单字/两三字回复是常态** —— 实测群里 58%% 的发言在 5 字以内, 中位只有 5 字。
   「唉」「行」「能」这种一个字的消息**必须能发出来**; 每条都写十几个字才是假的。
@@ -823,6 +828,11 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 		if echo := d.selfEchoViolation(frame); echo != "" {
 			violations = append(violations, echo)
 		}
+		// 事实溯源 (2026-10-19): 编造的自身经历 / 图里细节。
+		//
+		// ⚠️ 放在**审核机之前**: 能算出来的先算, 别为一句"我玩过 RTS"
+		// 多花一次 LLM 调用。命中就走同一条重试链 (原因进【修正】)。
+		violations = append(violations, GroundingViolations(FrameText(frame), in)...)
 		// 审核机: 人设 + 教练规则 + 这一轮上下文 → 过 / 不过。
 		// 不过就走**同一条重试链** (原因会进【修正】那一句), 仍不过才不发。
 		// ⚠️ 只在规则层已经通过时才审 —— 硬拒的句子没必要再花一次调用。
@@ -849,6 +859,7 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 				if echo := d.selfEchoViolation(frame2); echo != "" {
 					v2 = append(v2, echo)
 				}
+				v2 = append(v2, GroundingViolations(FrameText(frame2), in)...)
 				if len(v2) == 0 && d.Review != nil {
 					if v := d.Review(ctx, in, p, frame2); !v.OK {
 						v2 = append(v2, "审核机打回: "+v.Reason)
