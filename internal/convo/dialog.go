@@ -14,10 +14,14 @@ import (
 // ——— 模块 5: 对话引擎 (§8.5 六段注入 + 帧协议) ———
 
 type DialogInput struct {
-	UserText    string      // 本轮用户消息 (主动开场时为空)
-	History     string      // L1 最近对话 (组装好的 "你:/她:" 文本, 保持上下句联系)
-	State       string      // 当前状态 (schedule 裁决)
-	SlotLabel   string      // 日程槽人话描述 (注入用; Fact 非空时退居备用)
+	UserText  string // 本轮用户消息 (主动开场时为空)
+	History   string // L1 最近对话 (组装好的 "你:/她:" 文本, 保持上下句联系)
+	State     string // 当前状态 (schedule 裁决)
+	SlotLabel string // 日程槽人话描述 (注入用; Fact 非空时退居备用)
+	// PreviewNext / PreviewAt 预告要进入的**下一个**槽 (状态 + 起点 HH:MM)。
+	// ⚠️ 与 SlotLabel 不是一回事: SlotLabel 是"现在在哪一格", 这里是"马上要去哪一格"。
+	PreviewNext string
+	PreviewAt   string
 	Fact        *StateFact  // A2: 系统事实三元组。**唯一权威的状态来源** —— 模型只许润色
 	Mood        *MoodState  // P4: 系统持有的心情 (§4.1)。模型只许表达, 不许自述与发明
 	EventNotes  []EventNote // §3.6.8: 还在场上的世界事件 (附沉降阶段)
@@ -460,8 +464,25 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 	}
 	switch in.ActionKind {
 	case ActPreview:
-		fmt.Fprintf(&b, "对了, 马上要去「%s」了, 先跟 ta 说一声 —— 一句话, **说具体的事**(待会儿到底要干什么), 不要用「我马上要忙了 先跟你说一声」这类万金油%s。",
-			in.SlotLabel, lastAILines(in.History, 3))
+		// ⚠️ 方向由**下一个槽**决定, 不是当前槽 (2026-10-19 事故: 07:25 当前槽是「睡」,
+		// 下一个槽是「忙」, 旧写法用当前槽拼成"马上要去「睡」了" → 它说"我这就去睡了")。
+		when := ""
+		if s := strings.TrimSpace(in.PreviewAt); s != "" {
+			when = s + " "
+		}
+		next := ""
+		switch in.PreviewNext {
+		case StateSleep:
+			next = "差不多该睡了"
+		case StateFocus:
+			next = when + "起就要闭关学习了"
+		case StateBusy:
+			next = when + "起就要去忙正事了"
+		default:
+			next = when + "起要换个状态了"
+		}
+		fmt.Fprintf(&b, "对了, %s —— 先跟 ta 说一声。一句话, **说具体的事**(待会儿到底要干什么), 不要用「我马上要忙了 先跟你说一声」这类万金油%s。",
+			next, lastAILines(in.History, 3))
 	case ActReturnGreet:
 		b.WriteString("你们好几天没说话了, 主动打个招呼, 自然一点, 别啰嗦。")
 	case ActNoInput:

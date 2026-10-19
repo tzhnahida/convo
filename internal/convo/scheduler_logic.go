@@ -82,6 +82,13 @@ type TickInput struct {
 type TickAction struct {
 	Kind   string // none | preview | active_open | noinput | return_greet | steal_reply | delayed_reply | break_focus
 	Reason string
+	// SlotState / SlotStart 预告要进入的**下一个**槽。
+	//
+	// ⚠️ 2026-10-19 事故: 预告只带 Kind, 下游只能拿"当前槽"拼提示词 ——
+	// 07:25 当前槽是「睡」、下一个槽是「忙」, 于是它说「我这就去睡了」,
+	// 而 07:30 是该起床去上学。**方向感必须随动作一起传下去。**
+	SlotState string
+	SlotStart string
 	// 延迟回复参数 (delayed_reply 用)
 	// ⚠️ 这里原来有一个 `DelayMin int` —— **已删**, 与 `TickInput` 那个同理 ✓。
 	// 延迟由消费者掷 (`scheduleDelayedReply`) ✓。
@@ -141,7 +148,8 @@ func DecideTick(in TickInput, cfg SchedulerConfig) TickAction {
 		if next := nextSlot(ws, in.Now); next != nil && (next.State == StateFocus || next.State == StateBusy) {
 			slotStart, _ := parseHM(next.Start)
 			if inPreviewWindow(in.Now, slotStart) && in.PreviewToday < 1 {
-				return TickAction{Kind: ActPreview, Reason: "slot " + next.State + " @ " + next.Start}
+				return TickAction{Kind: ActPreview, Reason: "slot " + next.State + " @ " + next.Start,
+					SlotState: next.State, SlotStart: next.Start}
 			}
 		}
 	}

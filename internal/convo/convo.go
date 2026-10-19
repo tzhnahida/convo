@@ -1123,7 +1123,13 @@ func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
 
 	switch action.Kind {
 	case ActPreview:
-		return e.proactive(ctx, p, DialogInput{State: e.currentState(), ActionKind: ActPreview}, "previews", day)
+		return e.proactive(ctx, p, DialogInput{
+			State:      e.currentState(),
+			ActionKind: ActPreview,
+			// 方向感: 预告要进入的那一格, 由 DecideTick 算好带下来。
+			PreviewNext: action.SlotState,
+			PreviewAt:   action.SlotStart,
+		}, "previews", day)
 	case ActActiveOpen:
 		roll := RollTopicDice()
 		topic, err := e.Store.NextTopic(roll)
