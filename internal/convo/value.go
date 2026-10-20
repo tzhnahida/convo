@@ -513,6 +513,27 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		res.Stance = StanceSilent
 		res.Reason = "判不出对谁说的 — 倾向沉默 (误接话比不接更尴尬)"
 		return e.withConflict(sc, res)
+	case why == ReasonThreadOurs || why == ReasonThreadToSelf:
+		// §6.10.2 ③ 线程归属: 这句话就是在跟它说 —— **接**。
+		//
+		// ⚠️ **被点名(ReasonNamed)不在这里** —— 它本来就该走下面的价值判断:
+		// "被叫到"只值一个表情档, 够不上开口。2026-10-20 我把它一起塞进来,
+		// 三条既有用例当场红: 被点名 + 无梗从"表情"变成了"开口"。
+		//
+		// ⚠️ 这一支以前不存在: 判据早就返回了这些理由, 却没有 case 接住,
+		// 于是掉到下面"价值判断"里 (要命中 2 个判据才开口), 表现和"判不出来"几乎一样。
+		// 用户的原话「有时候没有 @ 但是话题没结束他就不回消息了」—— 就是这个。
+		//
+		// ⚠️ 但"刚说完话再接一句"是刷屏: 间隔太近就缓一次。
+		// 这是**时间**判断, 不是把"该不该接"重判一遍。
+		if !sc.PrevTS.IsZero() && !sc.TS.IsZero() && sc.TS.Sub(sc.PrevTS) < ThreadReplyMinGap {
+			res.Stance = StanceSilent
+			res.Reason = "线程延续, 但它刚说完话 — 缓一下 (" + why + ")"
+			return e.withConflict(sc, res)
+		}
+		res.Stance = StanceSpeak
+		res.Reason = "线程延续 — 上一条在跟它说 (" + why + ")"
+		return e.withConflict(sc, res)
 	case strings.HasSuffix(why, "_speak"):
 		// **系统故障** —— 往说话倒, 与"判不出来"是两件事。
 		res.Stance = StanceSpeak

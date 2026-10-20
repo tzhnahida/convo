@@ -373,6 +373,22 @@ func main() {
 						AtUINs:     ev.AtUINs(),
 						TS:         clock.Now(),
 					}
+					// §6.10.2 ③ 线程归属的原料: 上一条是谁说的、多久以前。
+					// ⚠️ 2026-10-20 修: 这几个字段**从来没被填过**, 于是
+					// "无 @ 时按线程归属"在生产上是死代码 (用户: 话题没结束它就不回)。
+					if dir, puin, pts, pok, perr := store.PrevSceneMessage(g.SceneKey); perr != nil {
+						log.Warn("convo:channel", "取上一条群消息失败(本轮按无线程处理): %v", perr)
+					} else if pok {
+						sc.HasPrev = true
+						if dir == "ai" {
+							sc.PrevUIN = cfg.Channel.SelfQQ // 它自己说的 → 这条大概率是在回它
+						} else {
+							sc.PrevUIN = puin
+						}
+						if t, terr := time.ParseInLocation("2006-01-02 15:04:05", pts, time.Local); terr == nil {
+							sc.PrevTS = t
+						}
+					}
 					self := convo.SelfIdentity{UIN: cfg.Channel.SelfQQ}
 					verdict := engine.GateGroupMessage(sc, self, cfg.Group)
 					store.CounterInc("group_gate_"+string(verdict.Stance), clock.Today()) // §12 三态读数

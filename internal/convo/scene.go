@@ -1115,6 +1115,12 @@ func selfNames(self SelfIdentity, cfg GroupConfig) []string {
 	return out
 }
 
+// ThreadReplyMinGap 线程延续时的最小间隔 —— 它刚说完话, 下一条别马上又接。
+//
+// 没有这一条, "上一条是它说的"会把一次连续对话变成刷屏
+// (2026-10-20 实测过同一秒冒出两条)。
+const ThreadReplyMinGap = 20 * time.Second
+
 // threadWithinWindow 距上一条是否还在线程窗口内。
 //
 // ⚠️ 时间戳缺失 → **视为窗口成立**: 零值 = 未提供 ≠ 超时 (纪律 #1)。

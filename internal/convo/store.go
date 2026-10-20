@@ -707,6 +707,37 @@ func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 	return out, rows.Err()
 }
 
+// PrevSceneMessage 取这个场景里**倒数第二条**消息 (当前这条刚入库, 是第一条)。
+//
+// ⚠️ 它是 §6.10.2 ③「无 @ 按线程归属」的**唯一数据来源**。
+// 2026-10-20 之前它根本不存在: main.go 构造 SceneMsg 时 HasPrev 恒 false,
+// 于是"上一条是我说的 → 接"那段判据在生产上**是死代码** ——
+// 用户的感受就是「话题还没结束, 它不 @ 就不回了」。
+func (s *Store) PrevSceneMessage(sceneKey string) (dir, uin, ts string, ok bool, err error) {
+	if s == nil || s.DB == nil {
+		return "", "", "", false, nil
+	}
+	rows, err := s.DB.Query(
+		"SELECT COALESCE(dir,''), COALESCE(sender_uin,''), COALESCE(ts,'') "+
+			"FROM convo_messages WHERE scene_key = ? ORDER BY id DESC LIMIT 2", sceneKey)
+	if err != nil {
+		return "", "", "", false, err
+	}
+	defer rows.Close()
+	got := 0
+	for rows.Next() {
+		var d, u, t string
+		if err := rows.Scan(&d, &u, &t); err != nil {
+			return "", "", "", false, err
+		}
+		got++
+		if got == 2 { // 第二条 = 当前这条之前的那条
+			return d, u, t, true, nil
+		}
+	}
+	return "", "", "", false, rows.Err()
+}
+
 // RecentMessagesIn 按场景取最近消息 —— **群路径必须用这个**。
 //
 // ⚠️ RecentMessages 是**全局**的 (没有 scene_key 过滤), 用它构造群里的 L1
