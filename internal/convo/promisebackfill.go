@@ -2,7 +2,9 @@ package convo
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tzhnahida/convo/internal/clock"
 	"github.com/tzhnahida/convo/internal/log"
@@ -54,17 +56,23 @@ func (e *Engine) maybeRecordVerbalPromise(in DialogInput, frame OutputFrame) {
 	if n > 0 {
 		return
 	}
+	// ⚠️ 2026-10-20 实测: 23:37 说「8点可以吗」被算成**当天 08:00**, 于是立刻 breached。
+	// 规则: 算出来的时刻必须在**未来**; 已经过去的顺延一天; 判不出绝对时间就留空
+	// (空 = 没定时刻, 仍算未结算, 但不会伪造一个过去的 DueTS)。
 	due := ""
 	if m := promiseHourRe.FindStringSubmatch(ask); len(m) == 2 {
-		hour := m[1]
-		day := clock.Today()
-		if strings.Contains(ask, "明天") {
-			day = clock.Now().Add(24 * 3600 * 1e9).Format("2006-01-02")
+		hour, herr := strconv.Atoi(m[1])
+		now := clock.Now()
+		if herr == nil && hour >= 0 && hour <= 23 {
+			target := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, time.Local)
+			if strings.Contains(ask, "明天") {
+				target = target.AddDate(0, 0, 1)
+			}
+			if !target.After(now) {
+				target = target.AddDate(0, 0, 1) // 今天说的时间已过 → 顺延到下一次
+			}
+			due = target.Format(bodyTSLayout)
 		}
-		if len(hour) == 1 {
-			hour = "0" + hour
-		}
-		due = day + " " + hour + ":00:00"
 	}
 	if _, err := e.Store.CreateAppointment(Appointment{
 		Who: 0, Scene: in.SceneKey, Text: ask, DueTS: due,

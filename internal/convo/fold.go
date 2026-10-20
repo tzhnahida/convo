@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -73,7 +74,9 @@ func FoldGroupDay(msgs []FoldMsg, keywords []string, maxTop int) FoldResult {
 		}
 		for _, k := range keywords {
 			k = strings.TrimSpace(k)
-			if k == "" || !strings.Contains(m.Text, k) {
+			// ⚠️ 2026-10-20: 词表混进了单字/标点碎片, 回顾于是显示「主要在聊：—、[、:」。
+			// 话题必须**至少两个实义字**, 且整串不许混标点。
+			if k == "" || !saneFoldKeyword(k) || !strings.Contains(m.Text, k) {
 				continue
 			}
 			s, ok := stats[k]
@@ -103,6 +106,21 @@ func FoldGroupDay(msgs []FoldMsg, keywords []string, maxTop int) FoldResult {
 	}
 	r.Text = FoldText(r)
 	return r
+}
+
+// saneFoldKeyword 这个词配不配当"话题"。
+// 单字、纯标点、图片占位一律拒 —— 它们是词表没洗干净的碎片, 不是话题。
+func saneFoldKeyword(k string) bool {
+	rs := []rune(k)
+	if len(rs) < 1 {
+		return false
+	}
+	for _, r := range rs {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.Is(unicode.Han, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // FoldText 折叠结果 → 一句话。

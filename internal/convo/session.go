@@ -274,6 +274,10 @@ func (e *Engine) sessionAnchor(sceneKey string) string {
 	for rows.Next() {
 		var t string
 		if rows.Scan(&t) == nil && strings.TrimSpace(t) != "" {
+			// 跳过夜间回顾那一行 —— 它不是对话, 是摘要; 混进锚点会污染 5 分钟分类器。
+			if strings.Contains(t, "条消息") && strings.Contains(t, "主要在聊") {
+				continue
+			}
 			out = append([]string{strings.TrimSpace(t)}, out...)
 		}
 	}
