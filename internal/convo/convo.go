@@ -883,6 +883,8 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 		frame = e.dropSelfEcho(frame)
 		// 文字回复附带一张表情包 (群友 14% vs 它 1.7%, owner 定 40%)。
 		frame = e.maybeAttachSticker(frame)
+		// 口头答应了一件未来时间的事 → 系统补记 (说话与记账对齐)。
+		e.maybeRecordVerbalPromise(in, frame)
 	}
 	return frame, err
 }

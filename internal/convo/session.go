@@ -71,7 +71,7 @@ func EnsureSessionSchema(db *sql.DB) error {
 
 // SessionReplyMinGap 会话中它刚说完话的**缓冲期** —— 这个窗口内不再接下一句。
 // 没有它, "会话中降一档"会变成对每条消息都接一句 —— 那是刷屏, 不是聊天。
-const SessionReplyMinGap = 90 * time.Second
+const SessionReplyMinGap = 10 * time.Second
 
 // SessionAnchorMax 锚点最多留多少字 (分类器的上文预算)。
 const SessionAnchorMax = 200

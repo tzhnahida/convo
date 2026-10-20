@@ -488,8 +488,11 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 				res.Reason = "会话中, 但它刚说完话 — 缓一下"
 				return e.withConflict(sc, res)
 			}
-			res.Reason = "会话中 — 5 分钟判定仍是同一话题, 走价值判断"
-			break
+			// 会话中就是**有话可说** —— 不再让价值判据挡"什么时候可以呀"这类追问
+			// (2026-10-20 实测: 它答应了约时间, 用户追问, 判据 0 命中 → 沉默)。
+			res.Stance = StanceSpeak
+			res.Reason = "会话中 — 5 分钟判定仍是同一话题, 接"
+			return e.withConflict(sc, res)
 		}
 		// ⚠️ **2026-10-14: 这里不再是终点。**
 		//
