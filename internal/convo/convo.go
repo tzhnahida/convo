@@ -419,6 +419,7 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		// 而是"关系级记忆绑场景"(§7.3)在私聊里退化成**全排除**:
 		// 带场景标签的记忆一条都取不到, 而它静默得看不出来。
 		SceneKey:   DefaultSceneKey,
+		SelfNote:   e.selfActionNote(),
 		CoachNote:  e.coachNote(""),
 		RepeatNote: e.repeatNote(DefaultSceneKey),
 		NewsNote:   e.newsNote(),

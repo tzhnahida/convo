@@ -853,8 +853,9 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		SceneNotes: e.sceneNotes(sceneKey), // §7.5 群公共层
 		State:      e.currentState(),
 		ActionKind: ActImmediate,
-		SceneKey:   sceneKey, // ← 决定 L1 取谁的历史
-		SpeakerUIN: uin,      // ← 护栏 3「偏向可见」的数据源
+		SceneKey:   sceneKey,           // ← 决定 L1 取谁的历史
+		SelfNote:   e.selfActionNote(), // ← 它自己的对外动作也要进事实层
+		SpeakerUIN: uin,                // ← 护栏 3「偏向可见」的数据源
 		Stance:     StanceSpeak,
 		// ⚠️ 只有当这张图**值得看**时才有值 (照片)。表情包走标签, 不走这里。
 		//

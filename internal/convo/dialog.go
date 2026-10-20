@@ -22,6 +22,11 @@ type DialogInput struct {
 	// ⚠️ 与 SlotLabel 不是一回事: SlotLabel 是"现在在哪一格", 这里是"马上要去哪一格"。
 	PreviewNext string
 	PreviewAt   string
+	// SelfNote 它自己**最近真的做过**的对外动作 (换头像 / 改昵称 / 发说说)。
+	//
+	// ⚠️ 系统替它做的, 必须回灌进事实层 —— 否则它会在群里否认自己刚做过的事
+	// (2026-10-20 实测: 20:11 换了头像, 20:48 被问起, 它说「我这边没动过啊」)。
+	SelfNote    string
 	Fact        *StateFact  // A2: 系统事实三元组。**唯一权威的状态来源** —— 模型只许润色
 	Mood        *MoodState  // P4: 系统持有的心情 (§4.1)。模型只许表达, 不许自述与发明
 	EventNotes  []EventNote // §3.6.8: 还在场上的世界事件 (附沉降阶段)
@@ -539,6 +544,11 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 	// 在段 8 里写一个段名当例子, 会让所有用段名做的判断**一起失效**。
 	// 这个是测试抓出来的: 我在段 8 里加了句「要处置【今天的处境】里那些约定」, 两条反面用例当场就红了。
 	// ⚠️ 必须排在段 7 (每轮变) **之前**: 挪到后面, 公共前缀会在段 7 就断掉。
+	// 它自己的对外动作: 与"今天的处境"同档 (天级, 但比处境更事实)。
+	// ⚠️ 位置在段 7 之前 —— 它是"最近这些天"的事实, 不是这一轮的事。
+	if in.SelfNote != "" {
+		b.WriteString("\n" + in.SelfNote)
+	}
 	if in.DayNote != "" {
 		b.WriteString("\n" + in.DayNote)
 	}
