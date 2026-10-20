@@ -67,6 +67,8 @@ type Engine struct {
 
 	// ChimeRollFn 插话掷骰, nil = Dice。**测试注入用**。
 	ChimeRollFn func(n int) int
+	// StickerRollFn 表情包附带概率的掷骰, nil = Dice。**测试注入用** (理由同 ChimeRollFn)。
+	StickerRollFn func(n int) int
 	// DayMoodFn 今天是什么日子 (低意愿/高意愿/平常), nil = DayMoodOf(今天)。**测试注入用**。
 	//
 	// ⚠️ 理由与 ChimeRollFn 一模一样: 它是**按日期**确定性的, 而约 15% 的日子是低意愿日 ——
@@ -879,6 +881,8 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 		// 片段计数各自只有 1-2, 那条闸一声不响。放在**出口**而不是提示词里:
 		// 能把的住复读的只有"发之前比一遍"。
 		frame = e.dropSelfEcho(frame)
+		// 文字回复附带一张表情包 (群友 14% vs 它 1.7%, owner 定 40%)。
+		frame = e.maybeAttachSticker(frame)
 	}
 	return frame, err
 }

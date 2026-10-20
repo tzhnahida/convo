@@ -348,7 +348,10 @@ type StickerConfig struct {
 	ScoreMin      float64 `yaml:"score_min"`       // vision 入选阈值 0-1, default 0.6
 	CapPerSticker float64 `yaml:"cap_per_sticker"` // 单张发送概率封顶, default 0.30
 	PoolCap       int     `yaml:"pool_cap"`        // 喜欢位上限 (超出按 affinity 退役), default 40
-	BuiltinDir    string  `yaml:"builtin_dir"`     // 内置初始集目录
+	// AttachPct 文字回复附带一张表情包的概率 %。
+	// 2026-10-20 owner 定: 40 —— 群友表情包率约 14%, 而它只有 1.7%。
+	AttachPct  int    `yaml:"attach_pct"`
+	BuiltinDir string `yaml:"builtin_dir"` // 内置初始集目录
 }
 
 func DefaultConfig() Config {
@@ -398,6 +401,7 @@ func DefaultConfig() Config {
 			ScoreMin:      0.6,
 			CapPerSticker: 0.30,
 			PoolCap:       40,
+			AttachPct:     DefaultStickerAttachPct,
 		},
 	}
 }
