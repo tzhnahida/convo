@@ -392,6 +392,10 @@ func main() {
 					self := convo.SelfIdentity{UIN: cfg.Channel.SelfQQ}
 					verdict := engine.GateGroupMessage(sc, self, cfg.Group)
 					store.CounterInc("group_gate_"+string(verdict.Stance), clock.Today()) // §12 三态读数
+					// 会话判断机: 被搭话 / 它要开口 → 开或刷新会话 (30 分钟窗口)。
+					if verdict.Addressed || verdict.Stance == convo.StanceSpeak {
+						engine.TouchSession(g.SceneKey)
+					}
 					log.Info("convo:channel", "群裁决 %s (%s) — %s",
 						verdict.Stance, verdict.AddressedWhy, verdict.Reason)
 					// 三态的后两态都是**已经能跑的** —— 第二态 0 次 LLM 调用,

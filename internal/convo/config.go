@@ -44,6 +44,9 @@ type Config struct {
 	// 审核机: 每条输出在发出去之前过一遍"人设 + 规则"的判定。
 	// ⚠️ 与 coach.go 的「教练: 规则」不是一回事 —— 那是**规则从哪来**, 这是**规则怎么用**。
 	Review ReviewConfig `yaml:"review"`
+	// 会话判断机: 每 5 分钟问一次「还在聊同一件事吗」(一次极小 LLM 调用), 用来维持
+	// 30 分钟的会话窗口 —— 没有 @ 但话题没结束的时候, 它不该装死。
+	Session SessionConfig `yaml:"session"`
 }
 
 // ReviewConfig 审核机 (输出前的第二双眼睛)。
@@ -360,7 +363,8 @@ func DefaultConfig() Config {
 			VisionModel: "deepseek-flash", // 原生多模态, 不再需要 experimental 视觉模型
 		},
 		// 审核机默认开 —— 它只在有文本可审时花一次调用, 且永远 fail-open。
-		Review: ReviewConfig{Enabled: true},
+		Review:  ReviewConfig{Enabled: true},
+		Session: SessionConfig{Enabled: true},
 		Channel: ChannelConfig{
 			Driver:   "noop",
 			APIBase:  "http://127.0.0.1:3001",
@@ -444,6 +448,7 @@ func Load(path string) (Config, error) {
 		cfg.AI.VisionModel = cfg.AI.Model
 	}
 	cfg.Review = cfg.Review.Normalized()
+	cfg.Session = cfg.Session.Normalized()
 	if cfg.Sched.TickEverySec <= 0 {
 		cfg.Sched.TickEverySec = 60
 	}

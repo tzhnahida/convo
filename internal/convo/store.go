@@ -387,6 +387,10 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	if err := EnsureSelfActionSchema(s.DB); err != nil {
 		return fmt.Errorf("self action schema: %w", err)
 	}
+	// 会话判断机 (每 5 分钟判"还在聊同一件事吗") 的状态表。
+	if err := EnsureSessionSchema(s.DB); err != nil {
+		return fmt.Errorf("session schema: %w", err)
+	}
 	// 戳一戳 (谁戳的、它回没回、为什么) —— 同样每一次都留痕。
 	if err := EnsurePokeSchema(s.DB); err != nil {
 		return fmt.Errorf("poke schema: %w", err)

@@ -478,6 +478,19 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		res.Reason = "@ 的是别人 — 不接 (连表情都不发)"
 		return e.withConflict(sc, res)
 	case why == ReasonUndecidable:
+		// 会话中 (5 分钟 mini 分类判定"还在聊同一件事") → **不落随机插话**,
+		// 直接走下面的价值判断; 门槛会在 effectiveValueConfig 里降一档。
+		// ⚠️ 只降门槛、不绕过判断: 它有话可说才开口 (§6.3)。
+		if e.sessionOpen(sc.SceneKey) {
+			// 它刚说完话的 90 秒内不接 —— 否则会话中会对每条消息都接一句 (刷屏)。
+			if t, ok := e.Store.LastAISpokeAt(sc.SceneKey); ok && clock.Now().Sub(t) < SessionReplyMinGap {
+				res.Stance = StanceSilent
+				res.Reason = "会话中, 但它刚说完话 — 缓一下"
+				return e.withConflict(sc, res)
+			}
+			res.Reason = "会话中 — 5 分钟判定仍是同一话题, 走价值判断"
+			break
+		}
 		// ⚠️ **2026-10-14: 这里不再是终点。**
 		//
 		// 原来判不出来就直接沉默 —— 于是它**只有被叫才存在**,
@@ -575,6 +588,14 @@ func (e *Engine) effectiveValueConfig(sc SceneMsg, cfg GroupConfig) ValueConfig 
 	p, err := e.Store.LoadProfile()
 	if err != nil || p == nil {
 		return vcfg
+	}
+	// 会话中: 门槛降一档 —— 话题还没散的时候, "接一句"比"沉默"更像人。
+	// ⚠️ 只降门槛, 不绕过判断 (它有话可说才开口, §6.3)。
+	if e.sessionOpen(sc.SceneKey) {
+		vcfg.SpeakMinHits--
+		if vcfg.SpeakMinHits < 1 {
+			vcfg.SpeakMinHits = 1
+		}
 	}
 	vcfg.SpeakMinHits += GroupRoleNeedBonus(e.RoleOf(p.Name, sc.SceneKey))
 	if vcfg.SpeakMinHits < 2 {

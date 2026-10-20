@@ -1599,6 +1599,9 @@ func (e *Engine) stepTick(ctx context.Context) {
 	if err := e.selfExpressTick(ctx); err != nil {
 		log.Warn("convo:self", "tick: %v", err)
 	}
+	// 会话判断机 (5 分钟一次 mini 分类): 维持 30 分钟会话窗口。
+	// ⚠️ 与上面三个同族: 定时任务挂在 stepTick, 不挂在"有动作才跑"的 OnTick 上。
+	e.sessionPollTick(ctx)
 
 	action := DecideTick(in, e.Cfg.Sched)
 	if action.Kind != ActNone {
