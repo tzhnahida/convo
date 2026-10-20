@@ -13,10 +13,10 @@ import (
 // 这一组用例钉的就是"它必须知道自己做过什么"。
 func TestRenderSelfActionNote(t *testing.T) {
 	out := RenderSelfActionNote([]SelfAction{
-		{Kind: SelfKindAvatar, CreatedTS: "2026-10-20 20:11:11"},
+		{Kind: SelfKindAvatar, CreatedTS: clock.Now().Format("2006-01-02") + " 20:11:11"},
 		{Kind: SelfKindQzone, CreatedTS: "2026-10-17 00:52:14"},
 	})
-	for _, want := range []string{"你最近对外做过的事", "换了头像", "发了一条说说", "10-20 20:11", "别否认"} {
+	for _, want := range []string{"你最近对外做过的事", "换了头像", "发了一条说说", "今天 20:11", "10-17 00:52", "别否认"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("渲染缺了 %q:\n%s", want, out)
 		}
@@ -27,6 +27,21 @@ func TestRenderSelfActionNote(t *testing.T) {
 	}
 	if RenderSelfActionNote([]SelfAction{{Kind: "never-heard"}}) != "" {
 		t.Fatal("未知类型不该渲染")
+	}
+}
+
+// ⚠️ 时间必须说人话: 2026-10-20 实测, 注入 "10-20 20:11 你换了头像",
+// 它回成"昨晚换头像" —— 一个裸日期它读不出"这是几小时前"。
+func TestFormatSelfActionTS(t *testing.T) {
+	cases := []struct{ created, today, want string }{
+		{"2026-10-20 20:11:11", "2026-10-20", "今天 20:11"},
+		{"2026-10-17 00:52:14", "2026-10-20", "10-17 00:52"},
+		{"", "2026-10-20", ""},
+	}
+	for _, c := range cases {
+		if got := formatSelfActionTS(c.created, c.today); got != c.want {
+			t.Errorf("formatSelfActionTS(%q,%q)=%q, 期望 %q", c.created, c.today, got, c.want)
+		}
 	}
 }
 

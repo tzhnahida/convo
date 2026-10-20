@@ -41,20 +41,32 @@ var selfActionLabels = map[string]string{
 	SelfKindQzone:    "发了一条说说",
 }
 
+// formatSelfActionTS 时间的人话。**今天的事情必须写"今天"** —— 2026-10-20 实测:
+// 注入的是 "10-20 20:11 你换了头像", 它回出来却是"昨晚换头像"(时间是错的)。
+// 一个裸日期它读不出来"这是几小时前", 而"今天/昨天"是它真能用的锚点。
+func formatSelfActionTS(created, today string) string {
+	ts := created
+	if len(ts) >= 16 {
+		clockPart := ts[11:16]
+		if len(today) == 10 && len(ts) >= 10 && ts[:10] == today {
+			return "今天 " + clockPart
+		}
+		return ts[5:10] + " " + clockPart // "10-17 00:52"
+	}
+	return ts
+}
+
 // RenderSelfActionNote 把最近**真的做过**的对外动作渲染成"你自己的事实"。
 // 空输入 → 空串 (不占位, 没做过就不该有这一段)。
 func RenderSelfActionNote(actions []SelfAction) string {
+	today := clock.Today()
 	var lines []string
 	for _, a := range actions {
 		label, ok := selfActionLabels[a.Kind]
 		if !ok {
 			continue
 		}
-		ts := a.CreatedTS
-		if len(ts) >= 16 {
-			ts = ts[5:16] // "2026-10-20 20:11:11" → "10-20 20:11"
-		}
-		lines = append(lines, fmt.Sprintf("- %s 你%s", ts, label))
+		lines = append(lines, fmt.Sprintf("- %s 你%s", formatSelfActionTS(a.CreatedTS, today), label))
 	}
 	if len(lines) == 0 {
 		return ""
@@ -63,6 +75,10 @@ func RenderSelfActionNote(actions []SelfAction) string {
 	b.WriteString("\n【你最近对外做过的事】(系统记录, 是真的 —— 别人问起别否认)\n")
 	b.WriteString(strings.Join(lines, "\n"))
 	b.WriteString("\n这些是你自己做的: 不是缓存、也不是别人动的手。有人问就照实说。\n")
+	// ⚠️ 2026-10-20 实测: 给了真事实之后, 它开始给事实**加戏** ——
+	// "昨晚换头像" / "睡不着翻相册"。系统只知道"做了什么", 不知道"当时在干嘛";
+	// 不写明这一点, 它会用编出来的细节把一句真话撑成一句假话。
+	b.WriteString("⚠️ 你只知道「做了什么」, 不知道「当时在干嘛、为什么」 —— 别为它编细节 (几点翻的相册、当时在想什么), 那是编。\n")
 	return b.String()
 }
 
