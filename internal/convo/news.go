@@ -119,7 +119,7 @@ func NewsNote(items []NewsItem) string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("⚠️ **别硬塞。** 聊到了顺口提一句就行; 没人聊就让它过去。\n")
+	b.WriteString("⚠️ **别硬塞, 但别装不知道。** 群里聊到这些事时, 你可以自然地接一句（「我也刷到了」这种）；别翻来覆去提它。\n")
 	b.WriteString("也**别当成你亲历的** —— 你是刷到的, 不是你在场。")
 	return b.String()
 }
@@ -130,7 +130,10 @@ func NewsNote(items []NewsItem) string {
 // 一条是"我这行有什么新的"(与 §2.5 的品味方向对齐)。
 // 多了会把它变成新闻聚合器 —— 而它是个朋友, 不是资讯台。
 func newsQueries(p *PersonaProfile) []string {
-	qs := []string{"今日热点新闻"}
+	// ⚠️ 2026-10-20 owner: 每天早上让它看一眼**热搜榜** ——
+	// 它对外面的世界一无所知，问它热点它说"我闭关呢"。
+	// 热搜放在**第一个**：RecentNews 按 id 倒序取，先存先被看见。
+	qs := []string{"今日热搜热点新闻 微博热搜榜"}
 	if p != nil {
 		if v := strings.TrimSpace(p.Attrs["interests"]); v != "" {
 			q := truncateStr(v, 12)
