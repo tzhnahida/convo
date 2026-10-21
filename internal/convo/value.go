@@ -426,6 +426,12 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		}
 	}
 
+	// 同一句连发 (2026-10-21): 同一条数列题 4 分钟内被 @ 了 4 次, 它答了 4 遍。
+	// 长句重复 = 同一道题, 只答一次; 短句重复是聊天常态, 不拦。
+	if e.isRepeatedQuestion(sc) {
+		return GroupGateResult{Stance: StanceSilent, Reason: "同一句重复 — 刚刚已经答过"}
+	}
+
 	// 1. 资格闸门。
 	//
 	// ⚠️ 有库时走 `ResolveAddressee`(读库版), 没库时才退回纯函数。

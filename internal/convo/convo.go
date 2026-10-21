@@ -634,6 +634,8 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 	}
 	// 同一张图的第 1 次留完整内容, 第 2 次起换成「内容往上找」(短标对得上)。
 	out = CollapseRepeatedImageMarks(out)
+	// 2026-10-21: 连续的自己发言合并成一行 —— 否则它的回复会把用户的提问挤出窗口。
+	out = collapseOwnBursts(out)
 	if len(out) == 0 {
 		return ""
 	}
