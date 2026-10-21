@@ -47,6 +47,8 @@ type Config struct {
 	// 会话判断机: 每 5 分钟问一次「还在聊同一件事吗」(一次极小 LLM 调用), 用来维持
 	// 30 分钟的会话窗口 —— 没有 @ 但话题没结束的时候, 它不该装死。
 	Session SessionConfig `yaml:"session"`
+	// 发言预算 + 被叫停 (2026-10-21 刷屏事故后加)。
+	Speech SpeechGuardConfig `yaml:"speech"`
 }
 
 // ReviewConfig 审核机 (输出前的第二双眼睛)。
@@ -368,6 +370,7 @@ func DefaultConfig() Config {
 		// 审核机默认开 —— 它只在有文本可审时花一次调用, 且永远 fail-open。
 		Review:  ReviewConfig{Enabled: true},
 		Session: SessionConfig{Enabled: true},
+		Speech:  SpeechGuardConfig{Enabled: true},
 		Channel: ChannelConfig{
 			Driver:   "noop",
 			APIBase:  "http://127.0.0.1:3001",
@@ -453,6 +456,7 @@ func Load(path string) (Config, error) {
 	}
 	cfg.Review = cfg.Review.Normalized()
 	cfg.Session = cfg.Session.Normalized()
+	cfg.Speech = cfg.Speech.Normalized()
 	if cfg.Sched.TickEverySec <= 0 {
 		cfg.Sched.TickEverySec = 60
 	}

@@ -387,6 +387,10 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	if err := EnsureSelfActionSchema(s.DB); err != nil {
 		return fmt.Errorf("self action schema: %w", err)
 	}
+	// 发言预算表 (静默期) —— 2026-10-21 刷屏事故后加。
+	if err := EnsureSpeechGuardSchema(s.DB); err != nil {
+		return fmt.Errorf("speech guard schema: %w", err)
+	}
 	// 会话判断机 (每 5 分钟判"还在聊同一件事吗") 的状态表。
 	if err := EnsureSessionSchema(s.DB); err != nil {
 		return fmt.Errorf("session schema: %w", err)

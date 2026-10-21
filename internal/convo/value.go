@@ -401,6 +401,31 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		}
 	}
 
+	// §6.13 **被叫停** (2026-10-21 实测: 群里说"闭嘴", 它回"？说谁呢", 然后继续刷)。
+	// 位置在资格闸门之前: 叫停与"这句话对谁说"无关, 也不该走价值判断。
+	// ⚠️ 不解释 —— 解释也是刷屏。
+	if IsStopRequest(sc.Text) {
+		// 叫停通常就是"它话太多"的抱怨 —— 让插话安全阀也记一笔 (§6.10.5 的 1% 收敛),
+		// 否则「别刷屏」这条既有安全阀会被叫停短路掉、永远不落库。
+		e.noteChimeComplaint(sc, hasAtSelf(sc.AtUINs, self.UIN))
+		until, reason := e.noteStopRequest(sc)
+		return GroupGateResult{Stance: StanceSilent,
+			Reason: "被叫停 — 静默到 " + until.Format("15:04") + " (" + reason + ")"}
+	}
+	// 静默期内: 不接、不插话、不发表情。例外只有两个:
+	//   · @ 它 = 明确叫它 → 解除静默 (用户想找它了);
+	//   · 危机词 → 仍然必答 (与 §6.3 同一条边界)。
+	if e.Store != nil {
+		if until, reason, muted := e.Store.SceneMute(sc.SceneKey, clock.Now()); muted {
+			if hasAtSelf(sc.AtUINs, self.UIN) || CrisisHit(sc.Text) {
+				_ = e.Store.ClearSceneMute(sc.SceneKey)
+			} else {
+				return GroupGateResult{Stance: StanceSilent,
+					Reason: "被叫停中 (" + reason + ") — 静默到 " + until.Format("15:04")}
+			}
+		}
+	}
+
 	// 1. 资格闸门。
 	//
 	// ⚠️ 有库时走 `ResolveAddressee`(读库版), 没库时才退回纯函数。
@@ -482,10 +507,11 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		// 直接走下面的价值判断; 门槛会在 effectiveValueConfig 里降一档。
 		// ⚠️ 只降门槛、不绕过判断: 它有话可说才开口 (§6.3)。
 		if e.sessionOpen(sc.SceneKey) {
-			// 它刚说完话的 90 秒内不接 —— 否则会话中会对每条消息都接一句 (刷屏)。
-			if t, ok := e.Store.LastAISpokeAt(sc.SceneKey); ok && clock.Now().Sub(t) < SessionReplyMinGap {
+			// ⚠️ 2026-10-21: 这一支原来是"会话中一律接", 结果一天说了 687 条。
+			// 现在过**发言预算** (静默期 / 间隔 45s / 10 分钟上限 4 条)。
+			if ok, whyNot := e.speechBudget(sc); !ok {
 				res.Stance = StanceSilent
-				res.Reason = "会话中, 但它刚说完话 — 缓一下"
+				res.Reason = whyNot
 				return e.withConflict(sc, res)
 			}
 			// 会话中就是**有话可说** —— 不再让价值判据挡"什么时候可以呀"这类追问
@@ -540,11 +566,19 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		// 于是掉到下面"价值判断"里 (要命中 2 个判据才开口), 表现和"判不出来"几乎一样。
 		// 用户的原话「有时候没有 @ 但是话题没结束他就不回消息了」—— 就是这个。
 		//
-		// ⚠️ 但"刚说完话再接一句"是刷屏: 间隔太近就缓一次。
-		// 这是**时间**判断, 不是把"该不该接"重判一遍。
+		// ⚠️ 2026-10-21: 原来只有"刚说完话"一个 20 秒判断 —— 而它回一句之后,
+		// 下一条消息的"上一条"又变成它 → 自激循环, 一天 687 条。
+		// 现在与会话分支共用同一份**发言预算**。
+		// 先看"上一条是不是刚说的": 3 秒前它自己刚开口, 这条大概率是它自己的余音。
 		if !sc.PrevTS.IsZero() && !sc.TS.IsZero() && sc.TS.Sub(sc.PrevTS) < ThreadReplyMinGap {
 			res.Stance = StanceSilent
 			res.Reason = "线程延续, 但它刚说完话 — 缓一下 (" + why + ")"
+			return e.withConflict(sc, res)
+		}
+		// 再看发言预算 (静默期 / 间隔 60s / 10 分钟 3 条)。
+		if ok, whyNot := e.speechBudget(sc); !ok {
+			res.Stance = StanceSilent
+			res.Reason = whyNot + " (" + why + ")"
 			return e.withConflict(sc, res)
 		}
 		res.Stance = StanceSpeak
