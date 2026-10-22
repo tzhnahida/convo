@@ -22,6 +22,15 @@ func TestReplyQuote_ParsesRealBridgeSegment(t *testing.T) {
 	}
 }
 
+// 桥补了 data.qq (数字 uin) —— ReplyQuote 要把它作为 sender 返回。
+func TestReplyQuote_ParsesNumericQQ(t *testing.T) {
+	raw := `[{"type":"reply","data":{"id":"7699434272511958271","qq":"3487037837","text":"老缇你那局挂完了没"}}]`
+	_, _, sender := OneBotEvent{Message: []byte(raw)}.ReplyQuote()
+	if sender != "3487037837" {
+		t.Fatalf("data.qq 没解析出来: %q", sender)
+	}
+}
+
 // 修好之前桥的 id 恒为 "0" —— 必须当"没有", 不许拿它去回查。
 func TestReplyQuote_ZeroIDIsNotAnID(t *testing.T) {
 	raw := `[{"type":"reply","data":{"id":"0","seq":"561708","text":"老缇你那局挂完了没"}}]`
@@ -37,7 +46,7 @@ func TestReplyQuote_ZeroIDIsNotAnID(t *testing.T) {
 // 引用那条不在库里 (窗口外/老消息) 时, 用桥上给的原话兜底。
 func TestReplyRefSuffix_FallsBackToBridgeText(t *testing.T) {
 	m := MessageRecord{ReplyTo: "7699434272511958271", ReplyText: "老缇你那局挂完了没"}
-	got := ReplyRefSuffix("群1", m, nil, nil)
+	got := ReplyRefSuffix("群1", m, nil, nil, "")
 	if !strings.Contains(got, "老缇你那局挂完了没") {
 		t.Fatalf("数据库查不到时应当用桥给的原话: %q", got)
 	}
@@ -57,7 +66,8 @@ func TestIsAddressedToMe_QuoteSelf(t *testing.T) {
 func TestStore_ReplyTextRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	if _, err := s.InsertMessageFull("user", "qq", "text", "你倒是提醒我了", MsgMeta{
-		SceneKey: sceneWireKey, SenderUIN: "111", MsgID: "m2", ReplyTo: "m1", ReplyText: "老缇你那局挂完了没",
+		SceneKey: sceneWireKey, SenderUIN: "111", MsgID: "m2", ReplyTo: "m1",
+		ReplyText: "老缇你那局挂完了没", ReplyUIN: "3487037837",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +77,8 @@ func TestStore_ReplyTextRoundTrip(t *testing.T) {
 	}
 	for _, r := range recs {
 		if r.MsgID == "m2" {
-			if r.ReplyTo != "m1" || r.ReplyText != "老缇你那局挂完了没" {
-				t.Fatalf("引用信息没读回来: reply_to=%q reply_text=%q", r.ReplyTo, r.ReplyText)
+			if r.ReplyTo != "m1" || r.ReplyText != "老缇你那局挂完了没" || r.ReplyUIN != "3487037837" {
+				t.Fatalf("引用信息没读回来: reply_to=%q reply_text=%q reply_uin=%q", r.ReplyTo, r.ReplyText, r.ReplyUIN)
 			}
 			return
 		}

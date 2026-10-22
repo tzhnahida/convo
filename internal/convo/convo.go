@@ -593,7 +593,7 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 		// ⚠️ 群号与发言人编号的**对照表在表头印一次** ✓ ——
 		// 原来「群聊(id) 名字(uin)」每行重复 ✗, 30 行就是 30 遍 ✗。
 		// 而那正是群主要求省的那笔 token ✓。
-		sfx := ReplyRefSuffix(groupTag, m, quoted, nameByUIN)
+		sfx := ReplyRefSuffix(groupTag, m, quoted, nameByUIN, e.Cfg.Channel.SelfQQ)
 		// ——— §6.10.3 **多主体发言流** ———
 		//
 		// 私聊只有一个主体 → 保持「你:/她:」二元 (加 uin 是噪声, 而且**会改动每一轮的

@@ -19,7 +19,7 @@ import (
 // ⚠️ 被引用的那条**可能在窗口之外** ✗ ⇒ `quoted` 里必须有它 ✓
 // (调用方负责回查并填进来 ✓, 见 `LoadQuotedByMsgIDs`)。
 // ⚠️ 查不到就**什么都不加** ✓ —— 宁可不附, 也不编一句"往上找" ✗。
-func ReplyRefSuffix(groupTag string, m MessageRecord, quoted map[string]MessageRecord, nameByUIN map[string]string) string {
+func ReplyRefSuffix(groupTag string, m MessageRecord, quoted map[string]MessageRecord, nameByUIN map[string]string, selfUIN string) string {
 	id := strings.TrimSpace(m.ReplyTo)
 	if id == "" {
 		return "" // 不是引用回复
@@ -30,7 +30,25 @@ func ReplyRefSuffix(groupTag string, m MessageRecord, quoted map[string]MessageR
 		// 那条可能在窗口外、或入库前就存在, 数据库查不到; 有原话就直接附,
 		// 只有"连原话都没有"时才是真的无从可附 (宁可不附, 也不编)。
 		if t := strings.TrimSpace(m.ReplyText); t != "" {
-			return " (回)" + "{" + truncateRunes(t, 60) + "}"
+			// who 从 reply_uin 来: 它自己的消息**没存 msg_id** ⇒ 引用它自己的话时
+			// 数据库必然查不到, 只能靠桥给的 qq (数字 uin) 认人。
+			who := ""
+			if u := strings.TrimSpace(m.ReplyUIN); u != "" {
+				switch {
+				case selfUIN != "" && u == strings.TrimSpace(selfUIN):
+					who = "她"
+				default:
+					if n := strings.TrimSpace(nameByUIN[u]); n != "" {
+						who = n + "(" + UinTail(u) + ")"
+					} else {
+						who = "群友(" + UinTail(u) + ")"
+					}
+				}
+			}
+			if who == "" {
+				return " (回){" + truncateRunes(t, 60) + "}"
+			}
+			return " (回){" + who + " " + truncateRunes(t, 60) + "}"
 		}
 		return ""
 	}

@@ -265,6 +265,9 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	// reply_text 桥给的**被引用原话** (2026-10-22): 引用那条可能在窗口外/老库里没有 ——
 	// 有原话就不必回查, 也不会"查不到就不附"。
 	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN reply_text TEXT DEFAULT ''`)
+	// reply_uin 被引用那条的**数字 uin** (桥 2026-10-22 补的 data.qq) ——
+	// 它自己的消息**没存 msg_id**, 所以引用它自己的话时只能靠这个号认人。
+	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN reply_uin TEXT DEFAULT ''`)
 
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN source TEXT DEFAULT 'user_said'`)
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN last_injected_ts TEXT DEFAULT ''`)
@@ -601,6 +604,7 @@ type MessageRecord struct {
 	DaySeq    int
 	ReplyTo   string
 	ReplyText string // 桥给的被引用原话 (有它就不必回查)
+	ReplyUIN  string // 被引用那条的发送者 (数字 uin; 它自己的消息只存了 dir=ai, 没 msg_id)
 
 	ID      int64  `json:"id"`
 	TS      string `json:"ts"`
@@ -654,6 +658,8 @@ type MsgMeta struct {
 	// ReplyText 桥送来的**被引用原话** (引用段里的 text 字段)。
 	// 空 = 桥没给 / 不是引用回复 —— 那时退回按 ReplyTo 回查数据库。
 	ReplyText string
+	// ReplyUIN 被引用那条的**数字 uin** (桥的 data.qq)。空 = 桥没给 / 不是引用。
+	ReplyUIN string
 }
 
 // InsertMessageFull 带完整分区信息的写入 (群路径与 §3.7 夜间批用这个)。
@@ -661,8 +667,8 @@ func (s *Store) InsertMessageFull(dir, channel, kind, payload string, meta MsgMe
 	id, err := s.insertMessage(dir, channel, kind, payload, meta.Origin, meta.SceneKey, meta.SenderUIN, JoinAtUINs(meta.AtUINs), meta.MsgID, meta.ReplyTo)
 	// 引用原话单独补一刀 UPDATE, 而不是给 insertMessage 再加第 11 个位置参数 ——
 	// P7 那次事故就是参数数错了; 而这条只有引用回复才走, 多一次 UPDATE 可忽略。
-	if err == nil && strings.TrimSpace(meta.ReplyText) != "" {
-		_, _ = s.DB.Exec(`UPDATE convo_messages SET reply_text=? WHERE id=?`, meta.ReplyText, id)
+	if err == nil && (strings.TrimSpace(meta.ReplyText) != "" || strings.TrimSpace(meta.ReplyUIN) != "") {
+		_, _ = s.DB.Exec(`UPDATE convo_messages SET reply_text=?, reply_uin=? WHERE id=?`, meta.ReplyText, meta.ReplyUIN, id)
 	}
 	return id, err
 }
@@ -707,7 +713,7 @@ func (s *Store) insertMessage(dir, channel, kind, payload, origin, sceneKey, sen
 func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 	rows, err := s.DB.Query(`SELECT id, ts, dir, channel, kind, payload_json,
 			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,''),
-			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,''), COALESCE(reply_text,'')
+			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,''), COALESCE(reply_text,''), COALESCE(reply_uin,'')
 		FROM convo_messages WHERE COALESCE(origin,'') <> ? ORDER BY id DESC LIMIT ?`, OriginAIToAI, limit)
 	if err != nil {
 		return nil, err
@@ -719,7 +725,7 @@ func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 		var atRaw string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Dir, &m.Channel, &m.Kind, &m.Payload,
 			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw,
-			&m.MsgID, &m.DaySeq, &m.ReplyTo, &m.ReplyText); err != nil {
+			&m.MsgID, &m.DaySeq, &m.ReplyTo, &m.ReplyText, &m.ReplyUIN); err != nil {
 			return nil, err
 		}
 		m.AtUINs = SplitAtUINs(atRaw)
@@ -767,7 +773,7 @@ func (s *Store) PrevSceneMessage(sceneKey string) (dir, uin, ts string, ok bool,
 func (s *Store) RecentMessagesIn(sceneKey string, limit int) ([]MessageRecord, error) {
 	rows, err := s.DB.Query(`SELECT id, ts, dir, channel, kind, payload_json,
 			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,''),
-			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,''), COALESCE(reply_text,'')
+			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,''), COALESCE(reply_text,''), COALESCE(reply_uin,'')
 		FROM convo_messages
 		WHERE COALESCE(origin,'') <> ? AND COALESCE(scene_key,'') = ?
 		ORDER BY id DESC LIMIT ?`, OriginAIToAI, sceneKey, limit)
@@ -781,7 +787,7 @@ func (s *Store) RecentMessagesIn(sceneKey string, limit int) ([]MessageRecord, e
 		var atRaw string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Dir, &m.Channel, &m.Kind, &m.Payload,
 			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw,
-			&m.MsgID, &m.DaySeq, &m.ReplyTo, &m.ReplyText); err != nil {
+			&m.MsgID, &m.DaySeq, &m.ReplyTo, &m.ReplyText, &m.ReplyUIN); err != nil {
 			return nil, err
 		}
 		m.AtUINs = SplitAtUINs(atRaw)
