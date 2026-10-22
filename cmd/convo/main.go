@@ -331,6 +331,8 @@ func main() {
 					// 而多主体发言流 (§6.10.3) 的全部意义就是"谁说的分得开" ——
 					// 没有 uin 它就是白建的, 它接的话只能对着空气。
 					uin := strconv.FormatInt(ev.UserID, 10)
+					// 2026-10-22 桥修好后: id/seq/text 全是真的; text 就是被引用原话。
+					quoteID, quoteText, _ := ev.ReplyQuote()
 					if _, err := store.InsertMessageFull("user", "qq", convo.KindForMark(payload), payload,
 						convo.MsgMeta{Origin: convo.OriginUser, SceneKey: g.SceneKey, SenderUIN: uin,
 							// §6.9 信号 ②「互相 @」的唯一数据来源。
@@ -343,8 +345,11 @@ func main() {
 							// ⚠️ `msg_id` 是**回查的钥匙** ✓ —— OneBot 的 reply 段里通常
 							// 只有 id 没有正文 ✗, 所以"把被引用的原话附在后面"这件事
 							// 只能靠拿这个 id 回查我们自己存过的那条 ✓。
-							MsgID:   strconv.FormatInt(int64(ev.MessageID), 10),
-							ReplyTo: ev.ReplyToMsgID(),
+							MsgID: strconv.FormatInt(int64(ev.MessageID), 10),
+							// ⚠️ 2026-10-22: 桥的 reply 段现在自带被引用原话 (text) 与真 id。
+							// 存 text 是为了「引用那条不在库里/窗口外」时还能附原话, 不必回查。
+							ReplyTo:   quoteID,
+							ReplyText: quoteText,
 						}); err != nil {
 						log.Warn("convo:channel", "store group msg: %v", err)
 					} else {
@@ -387,6 +392,13 @@ func main() {
 						}
 						if t, terr := time.ParseInLocation("2006-01-02 15:04:05", pts, time.Local); terr == nil {
 							sc.PrevTS = t
+						}
+					}
+					// 引用的是**它自己**吗 —— 与 @ 同级 (§6.10.2 ③)。
+					// 用库里的方向判 (dir=ai = 它说的), 因为桥的 sender 是 uid 形态、不是数字号。
+					if quoteID != "" {
+						if dir, _, ok := store.SenderOfMsgID(quoteID); ok && dir == "ai" {
+							sc.QuoteToSelf = true
 						}
 					}
 					self := convo.SelfIdentity{UIN: cfg.Channel.SelfQQ}

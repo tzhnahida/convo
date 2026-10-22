@@ -1,8 +1,10 @@
 package convo
 
 import (
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/tzhnahida/convo/internal/clock"
 	"github.com/tzhnahida/convo/internal/log"
@@ -70,6 +72,11 @@ func (e *Engine) chimeTopicMatch(sc SceneMsg) bool {
 	if e.Store == nil {
 		return false
 	}
+	// ⚠️ 2026-10-22 实测: 群友刷了一串「[QQ表情178]」, 它插了一句「？刷屏呢」——
+	// bigram「表情」命中了它学过的词。纯占位消息**没有话题可言**, 不许触发话题插话。
+	if !hasSubstantiveText(sc.Text) {
+		return false
+	}
 	mine := map[string]bool{}
 	if sparks, err := e.Store.SharableSparks(clock.Now(), 8); err == nil {
 		for _, sp := range sparks {
@@ -90,6 +97,9 @@ func (e *Engine) chimeTopicMatch(sc SceneMsg) bool {
 	}
 	// 比的是**这条消息 + 最近几句**: 一个话题很少在一句里说全。
 	for _, txt := range append([]string{sc.Text}, e.recentSceneTexts(sc.SceneKey, 4)...) {
+		if !hasSubstantiveText(txt) {
+			continue
+		}
 		for _, cu := range BigramCues(txt, 0) {
 			if mine[cu.Token] {
 				return true
@@ -118,6 +128,28 @@ func (e *Engine) recentSceneTexts(sceneKey string, n int) []string {
 		}
 	}
 	return out
+}
+
+// placeholderBrackets 消息里的**非文本占位** —— 表情 / 图片 / 图文标注。
+// 它们不是"话题", 只是"有人发了个东西"。
+var placeholderBrackets = regexp.MustCompile(`\[[^\]]*\]|\([^)]*\)|（[^）]*）`)
+
+// hasSubstantiveText 这条消息里有没有**真正的话** (至少两个实字)。
+//
+// ⚠️ 只用于"话题命中"这类**语义**判据: 纯表情/图片消息仍然要进上下文,
+// 只是不该被当成"群友聊到了它知道的事"。
+func hasSubstantiveText(s string) bool {
+	t := placeholderBrackets.ReplaceAllString(s, "")
+	n := 0
+	for _, r := range t {
+		if unicode.Is(unicode.Han, r) || unicode.IsLetter(r) || unicode.IsDigit(r) {
+			n++
+			if n >= 2 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // wakingElapsed 今天**醒着的时间**过了几分之几。

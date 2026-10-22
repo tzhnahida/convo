@@ -262,6 +262,9 @@ CREATE TABLE IF NOT EXISTS convo_body_state (
 	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN msg_id TEXT DEFAULT ''`)
 	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN day_seq INTEGER DEFAULT 0`)
 	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN reply_to TEXT DEFAULT ''`)
+	// reply_text 桥给的**被引用原话** (2026-10-22): 引用那条可能在窗口外/老库里没有 ——
+	// 有原话就不必回查, 也不会"查不到就不附"。
+	_, _ = s.DB.Exec(`ALTER TABLE convo_messages ADD COLUMN reply_text TEXT DEFAULT ''`)
 
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN source TEXT DEFAULT 'user_said'`)
 	_, _ = s.DB.Exec(`ALTER TABLE convo_memory ADD COLUMN last_injected_ts TEXT DEFAULT ''`)
@@ -594,9 +597,10 @@ type MessageRecord struct {
 	// AtUINs 这条消息 @ 了谁 (§6.9 信号 ②)。空 = 没 @ 任何人。
 	AtUINs []string
 	// §6.10.2 ③ 引用回复: 平台 id / 当天序号 / 这条在回哪一条 ✓。
-	MsgID   string
-	DaySeq  int
-	ReplyTo string
+	MsgID     string
+	DaySeq    int
+	ReplyTo   string
+	ReplyText string // 桥给的被引用原话 (有它就不必回查)
 
 	ID      int64  `json:"id"`
 	TS      string `json:"ts"`
@@ -647,11 +651,20 @@ type MsgMeta struct {
 	MsgID string
 	// ReplyTo 这条**引用**的是哪个 MsgID ✓。空 = 不是引用回复 ✓。
 	ReplyTo string
+	// ReplyText 桥送来的**被引用原话** (引用段里的 text 字段)。
+	// 空 = 桥没给 / 不是引用回复 —— 那时退回按 ReplyTo 回查数据库。
+	ReplyText string
 }
 
 // InsertMessageFull 带完整分区信息的写入 (群路径与 §3.7 夜间批用这个)。
 func (s *Store) InsertMessageFull(dir, channel, kind, payload string, meta MsgMeta) (int64, error) {
-	return s.insertMessage(dir, channel, kind, payload, meta.Origin, meta.SceneKey, meta.SenderUIN, JoinAtUINs(meta.AtUINs), meta.MsgID, meta.ReplyTo)
+	id, err := s.insertMessage(dir, channel, kind, payload, meta.Origin, meta.SceneKey, meta.SenderUIN, JoinAtUINs(meta.AtUINs), meta.MsgID, meta.ReplyTo)
+	// 引用原话单独补一刀 UPDATE, 而不是给 insertMessage 再加第 11 个位置参数 ——
+	// P7 那次事故就是参数数错了; 而这条只有引用回复才走, 多一次 UPDATE 可忽略。
+	if err == nil && strings.TrimSpace(meta.ReplyText) != "" {
+		_, _ = s.DB.Exec(`UPDATE convo_messages SET reply_text=? WHERE id=?`, meta.ReplyText, id)
+	}
+	return id, err
 }
 
 // InsertMessageEx 带分区信息的写入。§3.7 的夜间批算**必须**用这个入口,
@@ -694,7 +707,7 @@ func (s *Store) insertMessage(dir, channel, kind, payload, origin, sceneKey, sen
 func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 	rows, err := s.DB.Query(`SELECT id, ts, dir, channel, kind, payload_json,
 			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,''),
-			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,'')
+			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,''), COALESCE(reply_text,'')
 		FROM convo_messages WHERE COALESCE(origin,'') <> ? ORDER BY id DESC LIMIT ?`, OriginAIToAI, limit)
 	if err != nil {
 		return nil, err
@@ -706,7 +719,7 @@ func (s *Store) RecentMessages(limit int) ([]MessageRecord, error) {
 		var atRaw string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Dir, &m.Channel, &m.Kind, &m.Payload,
 			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw,
-			&m.MsgID, &m.DaySeq, &m.ReplyTo); err != nil {
+			&m.MsgID, &m.DaySeq, &m.ReplyTo, &m.ReplyText); err != nil {
 			return nil, err
 		}
 		m.AtUINs = SplitAtUINs(atRaw)
@@ -754,7 +767,7 @@ func (s *Store) PrevSceneMessage(sceneKey string) (dir, uin, ts string, ok bool,
 func (s *Store) RecentMessagesIn(sceneKey string, limit int) ([]MessageRecord, error) {
 	rows, err := s.DB.Query(`SELECT id, ts, dir, channel, kind, payload_json,
 			COALESCE(origin,''), COALESCE(scene_key,''), COALESCE(sender_uin,''), COALESCE(at_uins,''),
-			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,'')
+			COALESCE(msg_id,''), COALESCE(day_seq,0), COALESCE(reply_to,''), COALESCE(reply_text,'')
 		FROM convo_messages
 		WHERE COALESCE(origin,'') <> ? AND COALESCE(scene_key,'') = ?
 		ORDER BY id DESC LIMIT ?`, OriginAIToAI, sceneKey, limit)
@@ -768,13 +781,27 @@ func (s *Store) RecentMessagesIn(sceneKey string, limit int) ([]MessageRecord, e
 		var atRaw string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Dir, &m.Channel, &m.Kind, &m.Payload,
 			&m.Origin, &m.SceneKey, &m.SenderUIN, &atRaw,
-			&m.MsgID, &m.DaySeq, &m.ReplyTo); err != nil {
+			&m.MsgID, &m.DaySeq, &m.ReplyTo, &m.ReplyText); err != nil {
 			return nil, err
 		}
 		m.AtUINs = SplitAtUINs(atRaw)
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// SenderOfMsgID 按平台消息 id 找那条的**方向与发送者** (引用回复判定用)。
+//
+// ⚠️ 2026-10-22 引用数据修好后才可能命中: 之前 reply_to 恒空。
+func (s *Store) SenderOfMsgID(msgID string) (dir, uin string, ok bool) {
+	if s == nil || s.DB == nil || strings.TrimSpace(msgID) == "" {
+		return "", "", false
+	}
+	err := s.DB.QueryRow(`SELECT COALESCE(dir,''), COALESCE(sender_uin,'') FROM convo_messages WHERE msg_id = ? LIMIT 1`, strings.TrimSpace(msgID)).Scan(&dir, &uin)
+	if err != nil {
+		return "", "", false
+	}
+	return dir, uin, true
 }
 
 // ——— counters (试跑观察, 轻量计数) ———

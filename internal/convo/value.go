@@ -561,7 +561,7 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 		res.Stance = StanceSilent
 		res.Reason = "判不出对谁说的 — 倾向沉默 (误接话比不接更尴尬)"
 		return e.withConflict(sc, res)
-	case why == ReasonThreadOurs || why == ReasonThreadToSelf:
+	case why == ReasonThreadOurs || why == ReasonThreadToSelf || why == ReasonQuoteSelf:
 		// §6.10.2 ③ 线程归属: 这句话就是在跟它说 —— **接**。
 		//
 		// ⚠️ **被点名(ReasonNamed)不在这里** —— 它本来就该走下面的价值判断:

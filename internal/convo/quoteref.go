@@ -26,7 +26,13 @@ func ReplyRefSuffix(groupTag string, m MessageRecord, quoted map[string]MessageR
 	}
 	q, ok := quoted[id]
 	if !ok {
-		return "" // 引用的那条找不到 —— 不猜
+		// ⚠️ 2026-10-22: 桥的 reply 段**自带被引用原话** (text 字段) ——
+		// 那条可能在窗口外、或入库前就存在, 数据库查不到; 有原话就直接附,
+		// 只有"连原话都没有"时才是真的无从可附 (宁可不附, 也不编)。
+		if t := strings.TrimSpace(m.ReplyText); t != "" {
+			return " (回)" + "{" + truncateRunes(t, 60) + "}"
+		}
+		return ""
 	}
 	txt := strings.TrimSpace(q.Payload)
 	if txt == "" {

@@ -928,6 +928,9 @@ type SceneMsg struct {
 	PrevUIN   string // 上一条是谁说的
 	PrevTS    time.Time
 	PrevToUIN string // 上一条帧的 to 字段 ('' = 未指定收件人)
+	// QuoteToSelf 这条**引用回复的是它自己**说的那句话 (与 @ 同级)。
+	// ⚠️ 2026-10-22 起才有真数据 —— 之前桥的 reply id 恒为 "0", 无法判定。
+	QuoteToSelf bool
 }
 
 // SelfIdentity convo 自己在该场景的身份。名字只用于"被点名"这一个用途。
@@ -945,6 +948,7 @@ const (
 	ReasonAtOthersNamed   = "at_others_but_named"          // ② 例外: @了别人但文本点了我的名
 	ReasonAtOthersAllowed = "at_others_allowed_by_config"  // ② 例外: 配置显式打开
 	ReasonNamed           = "named"                        // 无 @ 但被点名
+	ReasonQuoteSelf       = "quote_self"                   // ③ 引用回复: 引的是它自己说的
 	ReasonThreadOurs      = "thread_ours"                  // ③ 上一条是我说的
 	ReasonThreadToSelf    = "thread_addressed_to_self"     // ③ 上一条的收件人是我
 	ReasonPrivateScene    = "private_scene_single_subject" // 私聊只有一个主体
@@ -981,6 +985,13 @@ func IsAddressedToMe(m SceneMsg, self SelfIdentity, cfg GroupConfig) (bool, stri
 	// 场景键未提供 → 按群处理: 群判据的默认落点是沉默, 那是保守的一侧。
 	if sceneKindOf(m) == SceneKindPrivate {
 		return true, ReasonPrivateScene
+	}
+
+	// ③' 引用回复**引的是它自己** → 接 (与 @ 同级)。
+	// ⚠️ 2026-10-22 桥修好之后才有真数据: 之前 reply_to 恒为空,
+	// 于是"用户引用它的话问『你刚才说什么』"它只能反问 —— 用户看到的是失忆。
+	if m.QuoteToSelf {
+		return true, ReasonQuoteSelf
 	}
 
 	// ① @我 → 接
