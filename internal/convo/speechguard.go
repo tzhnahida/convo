@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/tzhnahida/convo/internal/clock"
 	"github.com/tzhnahida/convo/internal/log"
@@ -82,8 +83,17 @@ func IsStopRequest(text string) bool {
 func EnsureSpeechGuardSchema(db *sql.DB) error {
 	_, err := db.Exec("CREATE TABLE IF NOT EXISTS convo_speech_gate (" +
 		"scene_key TEXT PRIMARY KEY, muted_until TEXT NOT NULL DEFAULT '', " +
-		"muted_reason TEXT NOT NULL DEFAULT '', muted_ts TEXT NOT NULL DEFAULT '')")
-	return err
+		"muted_reason TEXT NOT NULL DEFAULT '', muted_ts TEXT NOT NULL DEFAULT '', " +
+		"last_speak_ts TEXT NOT NULL DEFAULT '')")
+	if err != nil {
+		return err
+	}
+	// 老库补列: 发言预约 (2026-10-23)。
+	// 预算原来靠「库里最后一条 AI 消息」, 而群发言在 goroutine 里跑 ——
+	// 并发消息在消息入库前全部通过预算, 于是出现「一分钟 11 条」。
+	// 现在决策时先记一笔预约, 下一条消息立刻能看见。
+	_, _ = db.Exec("ALTER TABLE convo_speech_gate ADD COLUMN last_speak_ts TEXT NOT NULL DEFAULT ''")
+	return nil
 }
 
 // MuteScene 让这个场景静默到某个时刻。
@@ -116,6 +126,125 @@ func (s *Store) ClearSceneMute(sceneKey string) error {
 	return err
 }
 
+// MarkSpeakAttempt 决策为「要说」时**立刻**记一笔预约 (发送之前)。
+//
+// 这是并发下的修复: 预算读的是「上次开口时间」, 而发送是异步的 ——
+// 不先记账的话, 同一秒到的多条消息会同时看到「上一条是 1 分钟前」。
+func (s *Store) MarkSpeakAttempt(sceneKey string) error {
+	_, err := s.DB.Exec("INSERT INTO convo_speech_gate (scene_key, muted_until, muted_reason, muted_ts, last_speak_ts) "+
+		"VALUES (?, '', '', '', ?) ON CONFLICT(scene_key) DO UPDATE SET last_speak_ts=excluded.last_speak_ts",
+		sceneKey, clock.Now().Format(bodyTSLayout))
+	return err
+}
+
+// LastSpokeTs 这个场景它最后一次开口的时间 —— 在「真的发出去」与「刚决定要发」之间取较晚者。
+func (s *Store) LastSpokeTs(sceneKey string) (time.Time, bool) {
+	var gate string
+	_ = s.DB.QueryRow("SELECT COALESCE(last_speak_ts,'') FROM convo_speech_gate WHERE scene_key=?", sceneKey).Scan(&gate)
+	var best time.Time
+	if t, err := time.ParseInLocation(bodyTSLayout, gate, time.Local); err == nil {
+		best = t
+	}
+	if t, ok := s.LastAISpokeAt(sceneKey); ok && t.After(best) {
+		best = t
+	}
+	return best, !best.IsZero()
+}
+
+// RecentAITextsSince 这个场景最近说过的文本 (用于「同义句」拦截)。
+func (s *Store) RecentAITextsSince(sceneKey string, since time.Time, limit int) []string {
+	if s == nil || s.DB == nil {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 4
+	}
+	rows, err := s.DB.Query("SELECT COALESCE(payload_json,'') FROM convo_messages "+
+		"WHERE scene_key=? AND dir='ai' AND ts >= ? ORDER BY id DESC LIMIT ?", sceneKey, since.Format(bodyTSLayout), limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if rows.Scan(&t) == nil && strings.TrimSpace(t) != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// looksAddressedToIt 这句话「像是在对它说」 (会话中直接开口前的最后一道闸)。
+//
+// 2026-10-23 P2「没话硬插」: 会话开着并不等于该接。没有称呼/问句/第二人称的闲聊,
+// 退回价值判断 —— 有话说才开口。
+func looksAddressedToIt(text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return false
+	}
+	if strings.ContainsAny(t, "？?") {
+		return true
+	}
+	for _, w := range []string{"你", "您", "你们", "咱"} {
+		if strings.Contains(t, w) {
+			return true
+		}
+	}
+	for _, w := range []string{"吗", "呢"} {
+		if strings.HasSuffix(t, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// isContentlessText 这句话有没有实际内容 (纯标点/符号 = 没有)。
+//
+// 2026-10-23 P3: 群里出现过只回一个「？」的发言 —— 那是噪音, 不是聊天。
+func isContentlessText(s string) bool {
+	rs := []rune(strings.TrimSpace(s))
+	if len(rs) == 0 {
+		return true
+	}
+	for _, r := range rs {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.Han, r) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeForCompare 去掉空白与标点, 用于「同义句」比较。
+func normalizeForCompare(s string) string {
+	var b strings.Builder
+	for _, r := range []rune(s) {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// sameSpokenRecently 这句话是不是**刚说过** (60 秒内, 归一化后相等)。
+func (e *Engine) sameSpokenRecently(sceneKey, text string) bool {
+	if e.Store == nil {
+		return false
+	}
+	want := normalizeForCompare(text)
+	if want == "" {
+		return false
+	}
+	for _, prev := range e.Store.RecentAITextsSince(sceneKey, clock.Now().Add(-60*time.Second), 4) {
+		if normalizeForCompare(prev) == want {
+			return true
+		}
+	}
+	return false
+}
+
 // AIMsgCountSince 这个场景里它从某时刻起说了几条 (含表情)。
 func (s *Store) AIMsgCountSince(sceneKey string, since time.Time) int {
 	var n int
@@ -139,7 +268,7 @@ func (e *Engine) speechBudget(sc SceneMsg) (bool, string) {
 	if until, reason, ok := e.Store.SceneMute(sc.SceneKey, now); ok {
 		return false, "被叫停中 (" + reason + ") — 静默到 " + until.Format("15:04")
 	}
-	if t, ok := e.Store.LastAISpokeAt(sc.SceneKey); ok && now.Sub(t) < time.Duration(cfg.MinGapSec)*time.Second {
+	if t, ok := e.Store.LastSpokeTs(sc.SceneKey); ok && now.Sub(t) < time.Duration(cfg.MinGapSec)*time.Second {
 		return false, fmt.Sprintf("话太密 — 距上一条不到 %d 秒, 缓一下", cfg.MinGapSec)
 	}
 	if n := e.Store.AIMsgCountSince(sc.SceneKey, now.Add(-10*time.Minute)); n >= cfg.MaxPer10Min {

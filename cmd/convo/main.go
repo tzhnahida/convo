@@ -429,6 +429,9 @@ func main() {
 							}
 						}()
 					case convo.StanceSpeak:
+						// 2026-10-23 P1: 决策时就记一笔「发言预约」——
+						// 发送在 goroutine 里, 只靠库里最后一条消息挡不住并发突发。
+						_ = store.MarkSpeakAttempt(g.SceneKey)
 						// 图片已经在**裁决之前**处理过了 (下载 + 标注 + 判重分流) ——
 						// 这里只负责把结果交给这一轮对话。
 						//

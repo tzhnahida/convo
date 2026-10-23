@@ -520,10 +520,15 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 				res.Reason = whyNot
 				return e.withConflict(sc, res)
 			}
-			// 会话中就是**有话可说** —— 不再让价值判据挡"什么时候可以呀"这类追问
-			// (2026-10-20 实测: 它答应了约时间, 用户追问, 判据 0 命中 → 沉默)。
+			// ⚠️ 2026-10-23 P2「没话硬插」: 会话开着 ≠ 该接。
+			// 只有「像在对它说」(称呼/问句/第二人称) 才直接接;
+			// 否则退回下面的价值判断 (门槛已降一档) —— 有话说才开口。
+			if !looksAddressedToIt(sc.Text) {
+				res.Reason = "会话中 — 但没在跟它说, 退回价值判断"
+				break
+			}
 			res.Stance = StanceSpeak
-			res.Reason = "会话中 — 5 分钟判定仍是同一话题, 接"
+			res.Reason = "会话中 — 这话像是在问它"
 			return e.withConflict(sc, res)
 		}
 		// ⚠️ **2026-10-14: 这里不再是终点。**
@@ -918,6 +923,9 @@ func (e *Engine) sceneNotes(sceneKey string) []string {
 //
 // ⚠️ 与"直接塞路径"的区别: lookPath 是**已经判过重、打过标签**之后的决定 ——
 // 表情包只给标签 (标签就是它的行为), 照片才真的把图给它看。
+// GroupMaxTextPerTurn 群聊一轮最多发几条文本 —— 拆条是刷屏, 一条就够。
+const GroupMaxTextPerTurn = 1
+
 func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupID int64, uin, text, lookPath string) error {
 	gs, ok := e.Sender.(GroupSender)
 	if !ok {
@@ -1014,11 +1022,26 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		log.Warn("convo:engine", "群硬拒: 本条未发送 (%s)", frame.RefuseReason)
 		return nil
 	}
+	// 2026-10-23 P2: 群聊一轮**只说一句** (表情另算) —— 拆条是刷屏。
+	textSent := 0
 	for _, item := range frame.Reply {
 		switch item.Kind {
 		case "text":
 			txt := strings.TrimSpace(item.Text)
 			if txt == "" {
+				continue
+			}
+			if textSent >= GroupMaxTextPerTurn {
+				continue
+			}
+			// P3: 纯标点 (如只回一个「？」) 是噪音, 不是聊天。
+			if isContentlessText(txt) {
+				log.Info("convo:engine", "群发拦截: 空内容 %q", txt)
+				continue
+			}
+			// P3: 60 秒内说过一模一样的话 (归一化后) → 不重复发。
+			if e.sameSpokenRecently(sceneKey, txt) {
+				log.Info("convo:engine", "群发拦截: 刚说过同样的话 %q", txt)
 				continue
 			}
 			// 打字节奏: **打完了才发** —— 延迟按这条消息的字数算。
@@ -1031,6 +1054,7 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 				log.Warn("convo:engine", "群发文本失败: %v", serr)
 				continue
 			}
+			textSent++
 			kind := "text"
 			if frame.Degraded {
 				kind = "fallback" // 降级产物: 留痕但不进上下文
