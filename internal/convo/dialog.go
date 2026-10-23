@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -942,7 +943,25 @@ var fallbackLines = []string{
 	"（我这边网飘了一下，重说）",
 }
 
+// protoLeakRe 工具调用/协议语法的痕迹 —— 这些**绝不许**进聊天正文。
+//
+// 2026-10-23 实测: 群里出现过一条 <tool calls>\n<tool_name>web_search</｜｜DSML｜｜ parameter> ——
+// 模型吐了工具调用语法, 帧解析失败, 降级路径把**原始输出原样发了出去**。
+// 那比沉默糟糕得多: 群友看到的是内部协议。
+var protoLeakRe = regexp.MustCompile(`(?is)<\s*/?\s*tool|DSML|<\|`)
+
+// hasProtoLeak 这段输出里有没有工具/协议语法。
+func hasProtoLeak(s string) bool { return protoLeakRe.MatchString(s) }
+
 func degradeFrame(raw string) OutputFrame {
+	// ⚠️ 协议泄漏 → **整段丢弃**, 用兜底文案。
+	// 不能只剥标签: 剥完还剩 web_search 这种残片, 同样不是人话。
+	if hasProtoLeak(raw) {
+		log.Warn("convo:dialog", "降级帧含工具协议泄漏 — 改用兜底文案")
+		g := FrameForText(fallbackLines[Dice(len(fallbackLines))])
+		g.Degraded = true
+		return g
+	}
 	if b, err := extractJSON(raw); err == nil {
 		var f OutputFrame
 		if json.Unmarshal(b, &f) == nil {
@@ -953,7 +972,13 @@ func degradeFrame(raw string) OutputFrame {
 				}
 			}
 			if len(texts) > 0 {
-				g := FrameForText(strings.Join(texts, "\n"))
+				joined := strings.Join(texts, "\n")
+				if hasProtoLeak(joined) {
+					g := FrameForText(fallbackLines[Dice(len(fallbackLines))])
+					g.Degraded = true
+					return g
+				}
+				g := FrameForText(joined)
 				g.Degraded = true
 				return g
 			}
