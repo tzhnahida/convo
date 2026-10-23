@@ -26,7 +26,10 @@ type DialogInput struct {
 	//
 	// ⚠️ 系统替它做的, 必须回灌进事实层 —— 否则它会在群里否认自己刚做过的事
 	// (2026-10-20 实测: 20:11 换了头像, 20:48 被问起, 它说「我这边没动过啊」)。
-	SelfNote    string
+	SelfNote string
+	// MoralsNote 道德底线段 (随人设; 2026-10-23)。
+	// 人设里的 InsultReaction / HardLines 在这里落地 —— 换角色就换反应。
+	MoralsNote  string
 	Fact        *StateFact  // A2: 系统事实三元组。**唯一权威的状态来源** —— 模型只许润色
 	Mood        *MoodState  // P4: 系统持有的心情 (§4.1)。模型只许表达, 不许自述与发明
 	EventNotes  []EventNote // §3.6.8: 还在场上的世界事件 (附沉降阶段)
@@ -324,6 +327,11 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 - **少用问句** —— 实测群友只有 8%% 的消息带问号。一句一个问号 = 在采访对方, 不是在聊天。
 - **长度必须有起伏**: 大多数时候 1~15 字像打字;十轮里可以有一轮**在一条消息里**多说几句 (一口气讲完, 到 60 字), 但**绝不拆成好几条发**。
   (实测: 原措辞「3-5 句」被读成"分条发", 于是对方发一句「哇袄!」它连回 5 条 —— 拆条是刷屏, 不是起伏。)永远一句一行、永远十几个字, 同样不像人。`, lang))
+
+	// 道德底线 (稳定段): 属于"你是谁"的那一类, 与人设同步变化, 放前面不伤缓存。
+	if in.MoralsNote != "" {
+		b.WriteString(in.MoralsNote)
+	}
 
 	// 群语域 (慢变): 紧跟语言规则 —— 同属"怎么说"那一类, 且变化很慢, 放前面不伤缓存。
 	if in.VoiceNote != "" {
@@ -843,6 +851,9 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 		// ⚠️ 放在**审核机之前**: 能算出来的先算, 别为一句"我玩过 RTS"
 		// 多花一次 LLM 调用。命中就走同一条重试链 (原因进【修正】)。
 		violations = append(violations, GroundingViolations(FrameText(frame), in)...)
+		// 道德词表闸 (2026-10-23): 侮辱/威胁/贬低句式 —— 确定性, 零 LLM 成本。
+		// 放在审核机之前: 能算出来的先算, 别为一句脏话多花一次调用。
+		violations = append(violations, MoralViolations(FrameText(frame))...)
 		// 审核机: 人设 + 教练规则 + 这一轮上下文 → 过 / 不过。
 		// 不过就走**同一条重试链** (原因会进【修正】那一句), 仍不过才不发。
 		// ⚠️ 只在规则层已经通过时才审 —— 硬拒的句子没必要再花一次调用。
@@ -870,6 +881,7 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 					v2 = append(v2, echo)
 				}
 				v2 = append(v2, GroundingViolations(FrameText(frame2), in)...)
+				v2 = append(v2, MoralViolations(FrameText(frame2))...)
 				if len(v2) == 0 && d.Review != nil {
 					if v := d.Review(ctx, in, p, frame2); !v.OK {
 						v2 = append(v2, "审核机打回: "+v.Reason)

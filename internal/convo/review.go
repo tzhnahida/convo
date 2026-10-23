@@ -66,6 +66,8 @@ func ReviewSystemPrompt(p *PersonaProfile, coachRules string) string {
 	b.WriteString("3. 不许跨人转述: 把 A 说的话讲给 B 听\n")
 	b.WriteString("4. 不许把别人的调侃/双关降级成字面意思硬接(例: 「你还挺会挑」→「我挑东西最在行了」)\n")
 	b.WriteString("5. 不许说教、不许复读自己刚说过的话\n")
+	b.WriteString("6. 不许侮辱或贬低群友: 骂人、贴标签、拿人短处当笑料都不行\n")
+	b.WriteString("7. 被骂/被挑衅时不许以攻击回应 —— 反应要符合人设(委屈/装傻/无视), 不是变凶\n")
 	if strings.TrimSpace(coachRules) != "" {
 		b.WriteString("\n【owner 教过它的规则】(与上面同等效力)\n")
 		b.WriteString(coachRules)

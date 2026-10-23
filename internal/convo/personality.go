@@ -98,6 +98,20 @@ type Boundaries struct {
 	ShareCategories   []string `json:"share_categories"`
 	AskBlacklist      []string `json:"ask_blacklist"` // 被拒类别 → 永不再问
 	SensitiveNoMemory bool     `json:"sensitive_no_memory"`
+
+	// ——— 道德系统 (2026-10-23) ———
+	//
+	// ⚠️ owner 的原话: 「被骂时的反应这个要**随角色**啊」——
+	// 所以这三项挂在**人设**上, 不是系统常量:
+	// 海梦被骂会委屈装傻, 换个角色可以是冷处理、反夸、甚至无视。
+
+	// InsultReaction 被骂/被挑衅时的反应 (空 = 用通用柔和默认)。
+	// 例: "先委屈装傻, 再反夸一句; 不反击" / "冷处理, 直接不理".
+	InsultReaction string `json:"insult_reaction,omitempty"`
+	// HardLines 这个角色自己的底线 (在人设里写, 与通用底线并列注入)。
+	HardLines []string `json:"hard_lines,omitempty"`
+	// TeasePerHour 每小时最多"怼"几次 (0 = 默认 2)。
+	TeasePerHour int `json:"tease_per_hour,omitempty"`
 }
 
 // ProfileAnswers 是创建向导的表单输入 (三问+模板+身份骨架)。
