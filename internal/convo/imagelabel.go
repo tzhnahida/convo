@@ -167,9 +167,9 @@ func (l ImageLabel) renderFull() string {
 	if t := strings.TrimSpace(l.Text); t != "" {
 		hd += " 「" + truncateStr(t, 12) + "」"
 	}
-	if m != "" {
-		hd += " — " + m
-	}
+	// ⚠️ 2026-10-24: **表情包不再渲染 meaning** —— 用户实测: 随手发的表情包
+	// 被它当话读 (追问「这什么意思」、按图里的意思接话), 而表情包大多是情绪调味。
+	// meaning 仍存库 (统计/回顾用), 但不进上下文 —— 只留 act / 情绪 / 图上的字。
 	return hd + "]"
 }
 

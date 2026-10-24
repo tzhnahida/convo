@@ -40,8 +40,12 @@ func TestRenderSeen_FirstFullThenReference(t *testing.T) {
 func TestRenderSeen_StickerKeepsActInTag(t *testing.T) {
 	l := ImageLabel{Kind: "sticker", Act: "嘲讽", Emotion: "厌", Meaning: "看不起你"}
 	first := l.RenderSeen(1)
-	if !strings.Contains(first, "嘲讽") || !strings.Contains(first, "看不起你") {
-		t.Fatalf("第一次该有行为和含义: %q", first)
+	if !strings.Contains(first, "嘲讽") {
+		t.Fatalf("第一次该有行为: %q", first)
+	}
+	// ⚠️ 2026-10-24: 表情包**不再渲染含义** —— 那是过度解读的源头。
+	if strings.Contains(first, "看不起你") {
+		t.Fatalf("表情包不该再把含义铺进上下文: %q", first)
 	}
 	repeat := l.RenderSeen(5)
 	if !strings.Contains(repeat, "嘲讽") {

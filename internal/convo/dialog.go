@@ -310,7 +310,10 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 - **禁止整句、半句使用目标语** — 角色再「日本」, 你说的话也必须是中文为主。
 - 绝不纠正 ta 的语法错误, 绝不主动教学 (除非 ta 求助)。ta 什么语言说, 你就中文回。
 - 上下文里的 「[QQ表情265]」 这种是**聊天软件自带的小表情**(一个动作/一张笑脸), 不是图片。
-  ⚠️ **别把它说成图**, 更别拿它当"你看到了什么"的依据 —— 它就是个表情。
+  ⚠️ **别把它说成图**, 更别拿它当「你看到了什么」的依据 —— 它就是个表情。
+- 表情包 / QQ 小表情是**随手发的情绪调味**, 不代表具体意思:
+  ⚠️ 别解释它、别追问「这表情什么意思」、别按它给你编话题;
+  ⚠️ 只发一个表情 = ta **没说话** —— 你可以不回, 或回个表情/两三个字带过。
 - **绝不许说「图裂了 / 图糊了 / 一片空白 / 我没看到图 / 图呢 / 你发了吗」**。
   理由: 图上的内容**已经写在上下文里了** —— 写成 「[图: …]」 的就是。
   旧记录里的 「[图片]」「[表情]」 也是**同一件事**: 那是"有人发了张图/表情", 不是"图坏了"。
@@ -555,6 +558,9 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 	// ⚠️ 必须排在段 7 (每轮变) **之前**: 挪到后面, 公共前缀会在段 7 就断掉。
 	// 它自己的对外动作: 与"今天的处境"同档 (天级, 但比处境更事实)。
 	// ⚠️ 位置在段 7 之前 —— 它是"最近这些天"的事实, 不是这一轮的事。
+	if note := stickerOnlyNote(in.UserText); note != "" {
+		b.WriteString(note)
+	}
 	if in.SelfNote != "" {
 		b.WriteString("\n" + in.SelfNote)
 	}
@@ -941,6 +947,41 @@ var fallbackLines = []string{
 	"（刚那段没打出来，我重打）",
 	"（手滑发出去了，等下）",
 	"（我这边网飘了一下，重说）",
+}
+
+// qqFaceOnlyRe 只由 QQ 自带小表情组成的消息 (可能连着好几个)。
+var qqFaceOnlyRe = regexp.MustCompile(`^(\[QQ表情\d+\])+$`)
+
+// isStickerOnlyMessage 这条消息是不是**只发了个表情** (没有文字)。
+//
+// 形状: 我们自己的渲染 `(表情 — 嘲讽) [图: ...]`、QQ 小表情 `[QQ表情178]` (可连发)。
+// ⚠️ 照片是 `(照片) ...` —— 那是内容, 不算。
+func isStickerOnlyMessage(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	if qqFaceOnlyRe.MatchString(t) {
+		return true
+	}
+	// 表情渲染 + 括号外还有字 = 有话说 ("(表情 — 嘲讽) 你行不行啊"), 不算纯表情。
+	if strings.HasPrefix(t, "(表情") {
+		return !hasSubstantiveText(t)
+	}
+	return false
+}
+
+// stickerOnlyNote 本轮对方只发了个表情 → 一句话说明书。
+//
+// ⚠️ 2026-10-24 用户实测: 「有时候用户发的表情包没有任何意义, 可是 ai 就当有意义的读了」。
+// 标签里虽然有 act, 但它保不齐只是随手一发 —— 这一轮必须明说。
+func stickerOnlyNote(userText string) string {
+	if !isStickerOnlyMessage(userText) {
+		return ""
+	}
+	return "\n【这一轮对方只发了个表情包】\n" +
+		"ta 这条没有文字, 只是一个表情。表情包多半是随手发的情绪调味, 没有具体意思。\n" +
+		"别解读它、别追问「这什么意思」; 想回就回个表情, 或两三个字带过; 不回也行。\n"
 }
 
 // protoLeakRe 工具调用/协议语法的痕迹 —— 这些**绝不许**进聊天正文。
