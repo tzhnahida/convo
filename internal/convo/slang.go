@@ -143,6 +143,7 @@ func (s *Store) TopSlang(limit int) ([]Slang, error) {
 		score float64
 	}
 	var list []scored
+	today := clock.Today()
 	for _, sl := range all {
 		if sl.State == SlangRetired {
 			continue
@@ -151,6 +152,10 @@ func (s *Store) TopSlang(limit int) ([]Slang, error) {
 		if sl.State == SlangCandidate {
 			sc *= 0.6
 		}
+		// 2026-10-24: **每天轮换** —— 库里有一百多条时, 固定取前 12 条会让
+		// 新学的/内置的梗永远轮不到 (注入列表是它「知道哪些」的展示窗口)。
+		// 用 (phrase+日期) 的确定性抖动, 同一天内稳定, 隔天换一批。
+		sc += 0.1 * float64(dayJitter(sl.Phrase, today))
 		list = append(list, scored{sl: sl, score: sc})
 	}
 	for i := 0; i < len(list) && i < limit; i++ {
@@ -167,17 +172,37 @@ func (s *Store) TopSlang(limit int) ([]Slang, error) {
 	return out, nil
 }
 
+// dayJitter 由 (短语 + 日期) 算出的确定性抖动, 0..999。
+//
+// 用途: 注入轮换 —— 同一天内顺序稳定 (不抖前缀缓存), 隔天换一批。
+func dayJitter(phrase, day string) int {
+	h := 2166136261
+	for _, r := range phrase + "|" + day {
+		h ^= int(r)
+		h *= 16777619
+	}
+	if h < 0 {
+		h = -h
+	}
+	return h % 1000
+}
+
 // FindSlangHit 用户话语里的已知梗 (接住感知): 返回最长的 2 个命中。
 func (s *Store) FindSlangHit(text string) ([]Slang, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, nil
 	}
-	slangs, err := s.TopSlang(50)
+	// ⚠️ 2026-10-24: 原来只扫 TopSlang(50) —— 库里有 100+ 条时**一半的梗永远匹配不到**,
+	// 于是「群友说了它知道的梗, 它却没接住」。命中检测必须看全库 (退役的除外)。
+	slangs, err := s.SlangAll()
 	if err != nil {
 		return nil, err
 	}
 	var hits []Slang
 	for _, sl := range slangs {
+		if sl.State == SlangRetired {
+			continue
+		}
 		if len([]rune(sl.Phrase)) < 2 {
 			continue
 		}
