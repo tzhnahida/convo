@@ -58,7 +58,8 @@ const (
 // 除非用户又说了它 — source=user 时重新激活)。
 func (s *Store) UpsertSlang(m SlangDelta, source string) (int64, error) {
 	state := SlangActive
-	if source != "user" {
+	// 2026-10-24: builtin (内置常见梗种子) 也一样直接 active —— 它不需要试用期。
+	if source != "user" && source != "builtin" {
 		state = SlangCandidate
 	}
 	if m.Confidence < 0.7 && source == "user" {
@@ -76,7 +77,7 @@ func (s *Store) UpsertSlang(m SlangDelta, source string) (int64, error) {
 			example=CASE WHEN excluded.example<>'' THEN excluded.example ELSE example END,
 			source_quote=CASE WHEN excluded.source_quote<>'' THEN excluded.source_quote ELSE source_quote END,
 			confidence=MAX(confidence, excluded.confidence),
-			state=CASE WHEN excluded.source='user' THEN 'active'
+			state=CASE WHEN excluded.source IN ('user','builtin') THEN 'active'
 			           WHEN state='retired' AND excluded.source='web' THEN state
 			           ELSE state END,
 			updated_ts=excluded.updated_ts`,
@@ -338,14 +339,57 @@ func (h *HotMemeCycle) Run(ctx context.Context) error {
 	return nil
 }
 
-// hotTerms 热榜候选: B站热搜 → 微博热搜 (双源, 都零鉴权; ⚠️ 接口形态以 Pi 实测为准)。
+// hotTerms 热榜候选: B站 → 微博 → 百度 (三源, 都零鉴权; ⚠️ 接口形态以 Pi 实测为准)。
+//
+// 2026-10-24: 加百度做第三源 —— 用户反馈常见梗不知道, 单源偶尔会空/偏。
 func (h *HotMemeCycle) hotTerms(ctx context.Context, http *http.Client) ([]string, error) {
 	if terms, err := h.bilibiliHot(ctx, http); err == nil && len(terms) > 0 {
 		return terms, nil
 	} else if err != nil {
 		log.Warn("convo:slang", "bilibili hot: %v — 换微博热搜", err)
 	}
-	return h.weiboHot(ctx, http)
+	if terms, err := h.weiboHot(ctx, http); err == nil && len(terms) > 0 {
+		return terms, nil
+	} else if err != nil {
+		log.Warn("convo:slang", "weibo hot: %v — 换百度热搜", err)
+	}
+	return h.baiduHot(ctx, http)
+}
+
+// baiduHot 百度热搜 (public board api, 2026-10 实测可用)。
+func (h *HotMemeCycle) baiduHot(ctx context.Context, hc *http.Client) ([]string, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		"https://top.baidu.com/api/board?platform=wise&tab=realtime", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("baidu %d", resp.StatusCode)
+	}
+	var body struct {
+		Data struct {
+			Cards []struct {
+				Content []struct {
+					Word string `json:"word"`
+				} `json:"content"`
+			} `json:"cards"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, card := range body.Data.Cards {
+		for _, it := range card.Content {
+			if it.Word != "" {
+				out = append(out, it.Word)
+			}
+		}
+	}
+	return out, nil
 }
 
 func (h *HotMemeCycle) bilibiliHot(ctx context.Context, hc *http.Client) ([]string, error) {
@@ -416,13 +460,14 @@ func (h *HotMemeCycle) weiboHot(ctx context.Context, hc *http.Client) ([]string,
 	return out, nil
 }
 
-// pickMemes LLM 挑真梗: 排除事件/人名/影视/商品/纯英文/过气老梗; 最多 3 个。
+// pickMemes LLM 挑真梗: 排除事件/人名/影视/商品/纯英文/过气老梗; 最多 5 个。
+// (2026-10-24: 3 → 5, 每天一轮要能攒出量来。)
 func (h *HotMemeCycle) pickMemes(ctx context.Context, terms []string) ([]string, error) {
 	if len(terms) > 30 {
 		terms = terms[:30]
 	}
 	out, err := h.Chatter.Chat(ctx, "你输出单行 JSON。", `下面是一批今日热搜词。
-挑 1-3 个真正是"网络梗/流行语/大家都在复读的话"的。排除: 时事事件、人名、明星八卦、影视剧名、商品名、纯英文词、已经过气很久的老梗。
+挑 1-5 个真正是"网络梗/流行语/大家都在复读的话"的。排除: 时事事件、人名、明星八卦、影视剧名、商品名、纯英文词、已经过气很久的老梗。
 输出单行 JSON: {"pick":["词"]} (一个都不合适 → {"pick":[]})
 
 热搜词:
@@ -448,8 +493,8 @@ func (h *HotMemeCycle) pickMemes(ctx context.Context, terms []string) ([]string,
 		}
 		picked = append(picked, p)
 	}
-	if len(picked) > 3 {
-		picked = picked[:3]
+	if len(picked) > 5 {
+		picked = picked[:5]
 	}
 	return picked, nil
 }

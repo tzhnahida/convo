@@ -2068,16 +2068,20 @@ func (e *Engine) prepareDailyJobs(at time.Time) {
 				}
 			}()
 		}
-		// 模块 11: 主动学梗 (每周日, 与表情包周期同跑)
-		if e.SlangCycle != nil {
-			go func() {
-				cy, c2 := context.WithTimeout(context.Background(), 5*time.Minute)
-				defer c2()
-				if err := e.SlangCycle.Run(cy); err != nil {
-					log.Warn("convo:slang", "weekly hotmeme: %v", err)
-				}
-			}()
-		}
+	}
+	// 模块 11: 主动学梗 —— **每天一次** (2026-10-24)。
+	//
+	// ⚠️ 原来它和表情包周期一起只在**周日**跑: 一周学 ≤3 个词,
+	// 用户实测「好几次常见梗都不知道」—— 一周一次根本追不上流行速度。
+	// 热榜 + 百科释义都是免费接口, 一天一轮成本可以忽略。
+	if e.SlangCycle != nil {
+		go func() {
+			cy, c2 := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer c2()
+			if err := e.SlangCycle.Run(cy); err != nil {
+				log.Warn("convo:slang", "daily hotmeme: %v", err)
+			}
+		}()
 	}
 	// 模块 11: 梗生命周期退役 (active 90 天 / candidate 21 天)
 	if n, err := e.Store.RetireOldSlang(90, 21); err == nil && n > 0 {

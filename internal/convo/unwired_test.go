@@ -137,8 +137,6 @@ var knownUnwired = map[string]bool{
 	// 而它刻意返回常量而不是字段: "配置化就是给它留后门"。
 	// 钉它的是两条测试 (newmods2_test / wiring_test), 不是生产调用 —— **不许删**。
 	"IntentRetrievable": true,
-	// ⚠️ `SlangByPhrase` 与 `ImageFiles` 同类: 活数据的**第三种读视图**, 只有测试在调。
-	"SlangByPhrase": true,
 	// ⚠️ `ImageFiles` 是 `ImageRefs` 的**简化视图**, 只有测试在调 (`imagefiles_test.go`
 	// 整个文件都在测它的字段优先级)。那一类"只有测试在用的公开视图"是本棘轮的已知盲区 ——
 	// **不许再删**: 删了就得把测试一条条改掉, 而它们钉的是真实的线上格式行为。

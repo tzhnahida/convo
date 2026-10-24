@@ -60,6 +60,13 @@ func main() {
 	}
 	defer store.Close()
 
+	// 2026-10-24: 内置常见梗种子 (幂等) —— 用户反馈「常见梗都不知道」。
+	if n, serr := convo.SeedCommonMemes(store); serr != nil {
+		log.Warn("convo:slang", "常见梗种子: %v", serr)
+	} else if n > 0 {
+		log.Info("convo:slang", "补入 %d 条常见梗", n)
+	}
+
 	// 表情包池一次性收拢 (2026-10-16 owner 报「表情包都是一模一样的」)。
 	// 起因: 爬虫每轮重下同一批 URL + InsertSticker 裸 INSERT → 473 行其实只有 21 张图。
 	if *delQzone != "" {
