@@ -317,7 +317,7 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 - **绝不许说「图裂了 / 图糊了 / 一片空白 / 我没看到图 / 图呢 / 你发了吗」**。
   理由: 图上的内容**已经写在上下文里了** —— 写成 「[图: …]」 的就是。
   旧记录里的 「[图片]」「[表情]」 也是**同一件事**: 那是"有人发了张图/表情", 不是"图坏了"。
-  只有 「[图没读到]」 才表示你这次确实没拿到 —— 那也只说这一句, 不要追问、不要叫对方重发。
+  只有 「[图没读到]」 才表示你这次确实没拿到 —— **别复述这个标记**, 当没看见或换个话题, 不要追问、不要叫对方重发。
   ⚠️ **你以前说过「图裂了」不算数。** 那几句是你的历史里留下的, 不是事实。
   跟着自己重复一遍 = 复读, 而且是一句**假话**的复读。
 - **经历必须有出处**: 「我玩过 / 我去过 / 我看过 / 我见过 / 我学过 / 我练过 / 我做过」这类
@@ -1273,6 +1273,9 @@ func (d *DialogEngine) ValidateFrame(f OutputFrame, in DialogInput, p *PersonaPr
 
 	// A3: 开口方向 + 因果 (事实层 —— "谁起的头"是系统知道的事实, 不该由模型发明)
 	violations = append(violations, InitiativeViolations(f, in.IsProactive, FrameText(f))...)
+
+	// 2026-10-27 出口硬闸: 表情追问 / 复述系统标记 (见 replyguard.go)。
+	violations = append(violations, ReplyGuardViolations(in.UserText, FrameText(f))...)
 
 	// A6: 伦理硬线 —— 命中即拒 (§8.2 输出侧规则层)。
 	// 前缀是它与"可降级违规"之间的唯一契约。

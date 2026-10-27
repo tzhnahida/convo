@@ -101,6 +101,22 @@ func FoldGroupDay(msgs []FoldMsg, keywords []string, maxTop int) FoldResult {
 		}
 		return ranks[i].key < ranks[j].key
 	})
+	// ⚠️ 2026-10-27: 碎片合并 —— 词表里同时有「表」「情」「表情」时, 回顾会写成
+	// 「主要在聊：表、情、表情」。**是别人真子串的, 丢短的**, 只留最长那个。
+	kept := ranks[:0]
+	for _, rk := range ranks {
+		subsumed := false
+		for _, other := range ranks {
+			if other.key != rk.key && len([]rune(other.key)) > len([]rune(rk.key)) && strings.Contains(other.key, rk.key) {
+				subsumed = true
+				break
+			}
+		}
+		if !subsumed {
+			kept = append(kept, rk)
+		}
+	}
+	ranks = kept
 	for i := 0; i < len(ranks) && i < maxTop; i++ {
 		r.Topics = append(r.Topics, ranks[i].key)
 	}

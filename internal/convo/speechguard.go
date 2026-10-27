@@ -175,6 +175,29 @@ func (s *Store) RecentAITextsSince(sceneKey string, since time.Time, limit int) 
 	return out
 }
 
+// RecentAIPayloads 这个场景最近 n 条 AI 消息的原始 payload (新→旧)。
+//
+// 用途: 判断「是不是连着只会发表情」—— 反应档的节奏闸 (2026-10-27)。
+func (s *Store) RecentAIPayloads(sceneKey string, limit int) []string {
+	if s == nil || s.DB == nil || limit <= 0 {
+		return nil
+	}
+	rows, err := s.DB.Query("SELECT COALESCE(payload_json,'') FROM convo_messages "+
+		"WHERE scene_key=? AND dir='ai' ORDER BY id DESC LIMIT ?", sceneKey, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if rows.Scan(&t) == nil {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // looksAddressedToIt 这句话「像是在对它说」 (会话中直接开口前的最后一道闸)。
 //
 // 2026-10-23 P2「没话硬插」: 会话开着并不等于该接。没有称呼/问句/第二人称的闲聊,

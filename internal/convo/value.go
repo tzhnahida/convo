@@ -835,6 +835,12 @@ func (e *Engine) collectValueHits(sc SceneMsg, addressed bool) (ValueInput, Valu
 //
 // 这是"约九成判否"最便宜的落法 —— 接住了梗, 但没说一个字。
 func (e *Engine) ReactInGroup(sceneKey string, groupID int64) error {
+	// ⚠️ 2026-10-27 用户实测: 反应档占比偏高 —— 10-26 那天大半发言是单独的 [表情],
+	// 看上下文就是「它只会发图」。连着两条纯表情之后, 这一张先不发。
+	if e.stickersOnlyRecently(sceneKey, 2) {
+		log.Info("convo:sticker", "连着发表情了, 这一张先不发 (留给下一次开口)")
+		return nil
+	}
 	gs, ok := e.Sender.(GroupSender)
 	if !ok {
 		return fmt.Errorf("sender 不支持群发送 (未实现 GroupSender)")
@@ -869,6 +875,23 @@ func (e *Engine) ReactInGroup(sceneKey string, groupID int64) error {
 	_, _ = e.Store.InsertMessageFull("ai", "qq", "sticker", "[表情]",
 		MsgMeta{Origin: OriginAIToUser, SceneKey: sceneKey})
 	return nil
+}
+
+// stickersOnlyRecently 这个场景最近 n 条 AI 消息全是纯表情?
+func (e *Engine) stickersOnlyRecently(sceneKey string, n int) bool {
+	if e.Store == nil || n <= 0 {
+		return false
+	}
+	items := e.Store.RecentAIPayloads(sceneKey, n)
+	if len(items) < n {
+		return false
+	}
+	for _, t := range items {
+		if strings.TrimSpace(t) != "[表情]" {
+			return false
+		}
+	}
+	return true
 }
 
 // SceneMemoryInjectMax 群公共层一次最多注入几行。
