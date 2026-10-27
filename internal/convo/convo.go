@@ -900,6 +900,34 @@ type sendOp struct {
 	stickerID int64
 }
 
+// onlyFirstBubble 只留**第一条气泡** (优先文本)。
+//
+// ⚠️ 2026-10-27: 私聊预告实测连发三条 (「嗯 起来了」「待会儿九点得去洗杯子晾衣服」),
+
+// 看起来像它在自己跟自己汇报 —— 预告只需要一句话。
+
+func onlyFirstBubble(items []FrameItem) []FrameItem {
+
+	for _, it := range items {
+
+		if it.Kind == "text" && strings.TrimSpace(it.Text) != "" {
+
+			return []FrameItem{it}
+
+		}
+
+	}
+
+	if len(items) > 0 {
+
+		return items[:1]
+
+	}
+
+	return items
+
+}
+
 // MaxReplyItems 一帧里最多发几条。
 //
 // ⚠️ **提示词里的上限不算数** —— 实测模型会无视它。必须有一道代码层的硬闸:
@@ -1286,6 +1314,10 @@ func (e *Engine) proactive(ctx context.Context, p *PersonaProfile, in DialogInpu
 	if err != nil {
 		log.Error("convo:engine", "proactive reply: %v", err)
 		return err
+	}
+	// ⚠️ 2026-10-27: 预览只发一条 —— 一旦连发, 它就变成独自播报行程。
+	if in.ActionKind == ActPreview {
+		frame.Reply = onlyFirstBubble(frame.Reply)
 	}
 	if err := e.sendFrame(ctx, frame); err != nil {
 		return err
