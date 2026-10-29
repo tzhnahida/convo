@@ -61,7 +61,7 @@ func TestPreview_AsksThemInsteadOfReportingSchedule(t *testing.T) {
 		PreviewNext: StateBusy,
 		PreviewAt:   "09:00",
 	}, p, "ja")
-	for _, want := range []string{"别报行程", "问一句 ta", "只发一条"} {
+	for _, want := range []string{"别报行程", "开头必须是一句问候", "只发一条"} {
 		if !strings.Contains(sys, want) {
 			t.Fatalf("预告提示缺少 %q: %s", want, sys)
 		}

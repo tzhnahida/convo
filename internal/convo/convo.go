@@ -1318,6 +1318,23 @@ func (e *Engine) proactive(ctx context.Context, p *PersonaProfile, in DialogInpu
 	// ⚠️ 2026-10-27: 预览只发一条 —— 一旦连发, 它就变成独自播报行程。
 	if in.ActionKind == ActPreview {
 		frame.Reply = onlyFirstBubble(frame.Reply)
+		// ⚠️ 2026-10-30 用户: 「问候类呢?！」—— 产出仍是评论和提问。
+		// 两条硬闸: ① ask_share 不许在预告里追加 (那是审问);
+		// ② 开头必须是问候 —— 重生成一次仍不是 → 兜底一句朴素的问候。
+		frame.AskShare = nil
+		if !frame.Refused && !looksLikeGreeting(FrameText(frame)) {
+			if f2, ferr := e.dialogReply(ctx, in, p); ferr == nil {
+				f2.Reply = onlyFirstBubble(f2.Reply)
+				f2.AskShare = nil
+				if !f2.Refused && looksLikeGreeting(FrameText(f2)) {
+					frame = f2
+				}
+			}
+			if !frame.Refused && !looksLikeGreeting(FrameText(frame)) {
+				log.Info("convo:engine", "预告写不出问候, 用兜底句")
+				frame = OutputFrame{Reply: []FrameItem{{Kind: "text", Text: fallbackGreeting(clock.Now())}}}
+			}
+		}
 	}
 	if err := e.sendFrame(ctx, frame); err != nil {
 		return err
