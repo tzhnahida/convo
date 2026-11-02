@@ -562,6 +562,13 @@ func (e *Engine) GateGroupMessage(sc SceneMsg, self SelfIdentity, cfg GroupConfi
 			res.ChimeTopic = d.Topic
 			res.Reason = d.Reason
 			return e.withConflict(sc, res)
+		} else if d.Reason != "" {
+			// ⚠️ 被**一条具体理由**挡下时, 理由要落进 trace —— 否则「睡着的」
+			// 与「掷骰没中」在 convo_decision_trace 里长得一模一样, 而 2026-11-02
+			// 那次凌晨发言正是靠 reason 才查出发言是从话题通道漏出去的。
+			res.Stance = StanceSilent
+			res.Reason = d.Reason
+			return e.withConflict(sc, res)
 		}
 		res.Stance = StanceSilent
 		res.Reason = "判不出对谁说的 — 倾向沉默 (误接话比不接更尴尬)"

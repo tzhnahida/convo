@@ -77,6 +77,11 @@ type Engine struct {
 	DayMoodFn func(day string) DayMood
 	// PokeRollFn 戳一戳掷骰 (回不回、怎么回), nil = Dice。**测试注入用**。
 	PokeRollFn func(n int) int
+	// SleepNowFn 现在是不是睡着, nil = 读日程表 + inSleepWindow(现在)。**测试注入用**。
+	//
+	// ⚠️ 与 DayMoodFn 是同一条教训: 它读的是**墙上时钟**, 于是「夜里不插话」
+	// 这条用例白天绿、凌晨红 —— 2026-10-17 跨午夜变红那次就是这个坑。
+	SleepNowFn func() bool
 
 	Store  *Store
 	Cfg    Config

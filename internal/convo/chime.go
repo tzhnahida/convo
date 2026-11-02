@@ -94,6 +94,12 @@ type ChimeInput struct {
 	// ⚠️ 用 bool 而不是 `RatePct int` —— 那样零值会变成「0% = 永久禁言」,
 	// 而"没抱怨过"和"抱怨到禁言"是两件完全不同的事。
 	Complained bool
+	// Sleeping 现在是不是在睡眠窗里 (23:30–07:30 这类)。
+	//
+	// ⚠️ 它是**独立字段**, 不是"WakingElapsed == 0": 后者过了睡觉时刻反而返回 1
+	// (那天"醒着的时间已过完"), 拿它当睡眠判据会让 23:40 照样插话 ——
+	// 2026-11-02 实测凌晨的发言全部是话题通道溜出去的, 见 DecideChime ⓪。
+	Sleeping bool
 }
 
 // ChimeDecision 插话裁决。
@@ -120,6 +126,17 @@ func ChimeRate(complained bool) int {
 // 而"今天运气不好"和"今天不想说话"在日志里长得一模一样。
 func DecideChime(in ChimeInput) ChimeDecision {
 	no := ChimeDecision{Speak: false, Reason: ""}
+	// ⓪ 睡着 —— 排在**配额前面**: 睡眠窗里根本没有"想插一句"这回事。
+	//
+	// ⚠️ 2026-11-02 用户问「他啥时候睡觉啊, 为什么我凌晨还能看见他发信息」。
+	// 查下来睡眠状态只挡了随机通道 (预算 × WakingElapsed), 而**话题通道在它上面
+	// 就直接 return 了** —— 近 6 天凌晨每一条 reason 都是「插话 — 话题命中」。
+	//
+	// ⚠️ 这里只挡**插话**, 不挡被叫醒: 被 @ 走的是硬门槛短路, 压根不到这里;
+	// 同一个人连戳 sleep_unless_times 次算急事, 那条在 convo.go 的 urgent 判定里。
+	if in.Sleeping {
+		return ChimeDecision{Reason: "睡着的 — 没被叫就不吭声 (睡眠窗内不插话)"}
+	}
 	// ① 冷却 —— 连着插话比不插更烦人。
 	if in.SinceLast > 0 && in.SinceLast < ChimeCooldown {
 		return no

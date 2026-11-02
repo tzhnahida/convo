@@ -11,6 +11,8 @@ func chimeEngine(t *testing.T, roll int) *Engine {
 	t.Helper()
 	e, _ := groupSpeakEngine(t, &sitCaptureChatter{})
 	e.ChimeRollFn = func(n int) int { return roll }
+	// ⚠️ 睡眠闸读墙上时钟 —— 不钉死的话, 这套用例白天绿、凌晨红。
+	e.SleepNowFn = func() bool { return false }
 	return e
 }
 
@@ -66,6 +68,40 @@ func TestChimeAt_ComplaintLowersRate(t *testing.T) {
 	}
 	if e.chimeAt(sc).Speak {
 		t.Fatal("被说过之后 5% 不该命中 —— 收敛没生效")
+	}
+}
+
+// ⚠️ 2026-11-02 用户实测: 凌晨 00:01 / 02:28 群里还有它的发言。
+// 查下来睡眠只挡了随机通道 (预算 × WakingElapsed), 而话题通道在它上面就 return 了。
+func TestChimeAt_SleepingBlocksChime(t *testing.T) {
+	e := chimeEngine(t, 0) // 骰子必中
+	e.SleepNowFn = func() bool { return true }
+	sc := SceneMsg{SceneKey: "group:9", Text: "闲聊"}
+	d := e.chimeAt(sc)
+	if d.Speak {
+		t.Fatal("睡眠窗内还在插话 —— 凌晨那条就是这么漏出去的")
+	}
+	if d.Reason == "" {
+		t.Fatal("被睡眠挡下的那次要留一句理由, 否则 trace 里和掷骰没中分不开")
+	}
+}
+
+// ⚠️ 反例: 闸不能天天开着 —— 醒着时 0 号骰子必须还能插。
+func TestChimeAt_AwakeStillChimes(t *testing.T) {
+	e := chimeEngine(t, 0)
+	e.SleepNowFn = func() bool { return false }
+	if !e.chimeAt(SceneMsg{SceneKey: "group:10", Text: "闲聊"}).Speak {
+		t.Fatal("醒着时的掷中应当插话 —— 否则上面那条可能不是睡眠挡的")
+	}
+}
+
+// 纯函数口径: 睡着时连**话题通道**也不许过 (它是原来唯一的漏口)。
+func TestDecideChime_SleepingBeatsTopicChannel(t *testing.T) {
+	if d := DecideChime(ChimeInput{TopicMatch: true, Sleeping: true, GroupMsgsToday: 500, Roll: 0}); d.Speak {
+		t.Fatal("睡着时话题命中也不许插话")
+	}
+	if d := DecideChime(ChimeInput{TopicMatch: true, GroupMsgsToday: 500, Roll: 99}); !d.Speak {
+		t.Fatal("醒着时话题命中必须能插话 —— 否则测的是别的东西")
 	}
 }
 

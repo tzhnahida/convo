@@ -55,6 +55,7 @@ func (e *Engine) chimeAt(sc SceneMsg) ChimeDecision {
 		TopicUsedToday: topicUsed,
 		GroupMsgsToday: e.Store.GroupMsgsToday(sc.SceneKey),
 		WakingElapsed:  e.wakingElapsed(),
+		Sleeping:       e.sleepingNow(),
 		SinceLast:      sinceLast,
 		Complained:     complained,
 	})
@@ -150,6 +151,28 @@ func hasSubstantiveText(s string) bool {
 		}
 	}
 	return false
+}
+
+// sleepingNow 现在是不是睡着。
+//
+// ⚠️ 用 inSleepWindow(展示字段) 而不是 wakingElapsed: 后者在**刚过睡觉时刻**返回 1
+// ("今天醒着的时间已经过完"), 而睡眠闸要的恰恰是那一刻的"睡" —— 两者的零点不重合,
+// 混用会让 23:40 照样插话。
+//
+// ⚠️ 读不到日程表 → **当作醒着**: 与 wakingElapsed 同一方向 (保守的是"能说话"),
+// 一次读库抖动不该让它整天静音。
+func (e *Engine) sleepingNow() bool {
+	if e.SleepNowFn != nil {
+		return e.SleepNowFn()
+	}
+	if e.Store == nil {
+		return false
+	}
+	ws, err := e.Store.LoadSchedule()
+	if err != nil || ws == nil {
+		return false
+	}
+	return inSleepWindow(ws, clock.Now())
 }
 
 // wakingElapsed 今天**醒着的时间**过了几分之几。
