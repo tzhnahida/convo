@@ -112,14 +112,40 @@ func ShouldOpenSlot(state string) bool {
 	return state == StateFree || state == StateSlack
 }
 
-// windowBefore 开: 正在 (start-5min, start) 窗口的判定。
+// previewLeadMinutes 今天这次预告**提前几分钟** (4..30, 按天+槽确定性抽取)。
+//
+// ⚠️ 2026-11-03 用户实测: 私聊开场连着四天都落在 07:25:16~07:25:58 —— 因为原来的窗口
+// 写死为 (槽前 5 分钟, 槽], 而 tick 每分钟跑一次, 于是**永远命中窗口的第一分钟**。
+// 固定时刻 = 闹钟。人做同一件事不会分秒不差。
+//
+// ⚠️ 用哈希而不是随机数: 同一天重跑必须落到同一个时刻 (进程重启很常见),
+// 而每一天之间必须不同 —— `math/rand` 两条都满足不了。
+func previewLeadMinutes(day string, slotStartMin int) int {
+	const offset32 = 2166136261
+	const prime32 = 16777619
+	h := uint32(offset32)
+	for i := 0; i < len(day); i++ {
+		h = (h ^ uint32(day[i])) * prime32
+	}
+	h = (h ^ uint32(slotStartMin)) * prime32
+	return 4 + int(h%27) // 4..30 分钟
+}
+
+// inPreviewWindow 现在是不是**今天这次**预告的窗口。
+//
+// 窗口 = [槽前 lead 分钟, 槽前 2 分钟]。取一段而不是一分钟: 进程恰好在目标分钟
+// 睡着/重启时, 后面几分钟仍能补上 —— 否则那一天就静默地没有预告。
 func inPreviewWindow(now time.Time, slotStartMin int) bool {
 	if slotStartMin <= 0 {
 		return false
 	}
+	lead := previewLeadMinutes(now.Format("2006-01-02"), slotStartMin)
 	nowMin := now.Hour()*60 + now.Minute()
-	d := slotStartMin - nowMin
-	return d > 0 && d <= 5
+	target := slotStartMin - lead
+	if target < 0 {
+		target = 0
+	}
+	return nowMin >= target && nowMin <= slotStartMin-2
 }
 
 // NoInputQuota 把配置折成**条数上限** —— 它是解释这个配置的**唯一一处** ✓。

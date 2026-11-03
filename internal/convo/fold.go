@@ -2,12 +2,17 @@ package convo
 
 import (
 	"database/sql"
+	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
 )
+
+// foldImageMarkRe 图注标记：「[图: 一个表情]」「[图: 一张图, 没细看]」。
+//
+// ⚠️ 折叠话题前必须先剥掉它 —— 否则图注里的词会变成"今天在聊什么"。
+var foldImageMarkRe = regexp.MustCompile(`\[图[:：][^\]]*\]`)
 
 // ─────────────────────────────────────────────────────────────
 // §7.1 群消息日终折叠
@@ -34,7 +39,13 @@ type FoldResult struct {
 	Total    int
 	Speakers int
 	Topics   []string
-	Text     string
+	// Quote 当天最具体的一句话 (真人原话的截断, 取自最热话题那一条)。
+	//
+	// ⚠️ 2026-11-03 用户实测: 日终回顾每天写成「今天群里128条消息、9个人、主要在聊：表情、照片」,
+	// 那是**监控周报**, 不是"我记得今天"。人回忆一天只会想起**一件具体的事**,
+	// 所以这里带一句原话 (确定性挑选, 不接 LLM —— 决策器不接 LLM)。
+	Quote string
+	Text  string
 }
 
 const FoldDefaultMaxTop = 3
@@ -72,11 +83,20 @@ func FoldGroupDay(msgs []FoldMsg, keywords []string, maxTop int) FoldResult {
 		if m.SenderUIN != 0 {
 			speakers[m.SenderUIN] = true
 		}
+		// ⚠️ 2026-11-03: 只在**去掉图注之后**的正文里找话题。
+		//
+		// 实测回顾写成「主要在聊：表情、照片」—— 这两个词来自图片标注
+		// (「[图: 一个表情]」那种), 不是群里聊的内容。图注是"发生了什么",
+		// 不是"在说什么", 混进话题 = 把相机日志当成聊天记录。
+		plain := FoldPlainText(m.Text)
+		if plain == "" {
+			continue
+		}
 		for _, k := range keywords {
 			k = strings.TrimSpace(k)
 			// ⚠️ 2026-10-20: 词表混进了单字/标点碎片, 回顾于是显示「主要在聊：—、[、:」。
 			// 话题必须**至少两个实义字**, 且整串不许混标点。
-			if k == "" || !saneFoldKeyword(k) || !strings.Contains(m.Text, k) {
+			if k == "" || !saneFoldKeyword(k) || !strings.Contains(plain, k) {
 				continue
 			}
 			s, ok := stats[k]
@@ -120,14 +140,63 @@ func FoldGroupDay(msgs []FoldMsg, keywords []string, maxTop int) FoldResult {
 	for i := 0; i < len(ranks) && i < maxTop; i++ {
 		r.Topics = append(r.Topics, ranks[i].key)
 	}
+	if len(r.Topics) > 0 {
+		r.Quote = foldQuote(msgs, r.Topics[0])
+	}
 	r.Text = FoldText(r)
 	return r
+}
+
+// foldQuote 当天关于 topic 的**第一句像样的话** (确定性挑选)。
+//
+// ⚠️ 不选最长/最热闹的: 那需要打分, 而打分需要一个尺度 —— 确定性挑选只要
+// "第一句够长、且不是只提了这个词本身"。重复运行时结果必须逐字节相同。
+func foldQuote(msgs []FoldMsg, topic string) string {
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return ""
+	}
+	for _, m := range msgs {
+		plain := FoldPlainText(m.Text)
+		if !strings.Contains(plain, topic) {
+			continue
+		}
+		rs := []rune(plain)
+		// 太短的 (只有「表情」「耳机」这种) 算不上"一句具体的话"。
+		if len(rs) < 6 {
+			continue
+		}
+		// 折进去的是记忆, 不是来回对话 —— 截断到 28 字够表意。
+		if len(rs) > 28 {
+			return string(rs[:28]) + "…"
+		}
+		return plain
+	}
+	return ""
+}
+
+// FoldPlainText 去掉图注/占位标记之后的正文，折录用。
+//
+// ⚠️ 保留一句话的其余部分: 「[图: 一个表情] 这也太草了」剥完还剩「这也太草了」,
+// 那是真的在说话; 而纯图消息剥完是空串 → 它不进话题统计 (也就不会造出
+// 「主要在聊：表情」这种相机日志)。
+func FoldPlainText(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	out := foldImageMarkRe.ReplaceAllString(s, " ")
+	out = strings.NewReplacer("[图片]", " ", "[表情]", " ", "[图]", " ", "[图没读到]", " ", "[语音]", " ").Replace(out)
+	return strings.Join(strings.Fields(out), " ")
 }
 
 // saneFoldKeyword 这个词配不配当"话题"。
 // 单字、纯标点、图片占位一律拒 —— 它们是词表没洗干净的碎片, 不是话题。
 func saneFoldKeyword(k string) bool {
 	rs := []rune(k)
+	// ⚠️ 2026-11-03 试过改成「至少两个实义字」来挡「表」「情」「示」——**退回**了:
+	// 「猫」「狗」「饭」都是真话题, 一刀切会把它们一起砍掉 (TestFold_TopicsRankedAndFallback 钉着)。
+	// 碎片由另外两道闸收拾: ① 下面这条"必须全是字母/数字/汉字"挡住 —、[、:;
+	// ② 折叠时的子串合并把「表」「情」并进「表情」。
 	if len(rs) < 1 {
 		return false
 	}
@@ -140,26 +209,22 @@ func saneFoldKeyword(k string) bool {
 }
 
 // FoldText 折叠结果 → 一句话。
+//
+// ⚠️ 2026-11-03 用户实测: 原来的「今天群里128条消息、9个人、主要在聊：表情、照片」
+// 是**监控周报**, 不是回忆。人回想一天只会记得**一件具体的事**:
+// 所以现在说的是"聊了什么、有人说了哪句话", 条目数与人头数只留作读数 (落库), 不进这句话。
 func FoldText(r FoldResult) string {
 	if r.Total == 0 {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString("今天群里")
-	b.WriteString(strconv.Itoa(r.Total))
-	b.WriteString("条消息")
-	if r.Speakers > 0 {
-		b.WriteString("、")
-		b.WriteString(strconv.Itoa(r.Speakers))
-		b.WriteString("个人")
+	if len(r.Topics) == 0 {
+		return "今天群里没什么正经话题，随便扯了几句"
 	}
-	if len(r.Topics) > 0 {
-		b.WriteString("，主要在聊：")
-		b.WriteString(strings.Join(r.Topics, "、"))
-	} else {
-		b.WriteString("，没什么正经话题，随便扯了几句")
+	topic := r.Topics[0]
+	if r.Quote == "" {
+		return "今天群里聊得最多的是「" + topic + "」"
 	}
-	return b.String()
+	return "今天群里聊得最多的是「" + topic + "」，有人说到「" + r.Quote + "」"
 }
 
 // FoldLine 折叠结果 → 记忆文本。空结果返回 false（**没有这一天**，不是空记忆）。

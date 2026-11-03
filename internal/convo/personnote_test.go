@@ -57,9 +57,14 @@ func TestPersonNote_OnlyTheSpeaker(t *testing.T) {
 // TestPersonNote_ZeroValuesAddNothing (反面)
 //
 // ⚠️ 空段会白占 token, 而且会让模型以为"关于他什么都不知道"是条信息。
+//
+// ⚠️ 2026-11-03 **串人事故后改口径**: 有名字/有 uin 就**必须**有这一段。
+// 原来这里断言"没有记忆 → 空串", 而正是那条让当轮说话人从提示词里消失了,
+// 模型只好去别处借了个名字 (借到了同群另一个人的外号)。
+// 现在只有**全零**才什么都不加; 有名字时那一段要明说"你没给他起过称呼"。
 func TestPersonNote_ZeroValuesAddNothing(t *testing.T) {
-	if got := PersonNoteLine("小明", "", "10001", nil, nil); got != "" {
-		t.Fatalf("没有记忆时不应当是空串以外的东西: %q", got)
+	if got := PersonNoteLine("小明", "", "10001", nil, nil); strings.TrimSpace(got) == "" {
+		t.Fatal("有名字却没身份锚 —— 这正是串人的温床")
 	}
 	if got := PersonNoteLine("", "", "", nil, nil); got != "" {
 		t.Fatalf("全零时不应当是空串以外的东西: %q", got)

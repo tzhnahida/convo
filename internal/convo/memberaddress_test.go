@@ -72,11 +72,17 @@ func TestMemberAddress_PerSceneNoCrossTalk(t *testing.T) {
 
 // TestMemberAddress_NoAddressAddsNothing (反面)
 //
-// ⚠️ **零值 = 未提供**: 没设称呼时那一行**一个字都不该出现** ✓。
+// ⚠️ **零值 = 未提供**: 没设称呼时不该编一个称呼出来 ✓。
+//
+// ⚠️ 2026-11-03 串人事故后: "没称呼"要**明说**, 而不是整段消失 ——
+// 整段消失时模型会从别处借一个 (借到了同群别人的外号「老缇」)。
 func TestMemberAddress_NoAddressAddsNothing(t *testing.T) {
 	got := PersonNoteLine("小明", "", "10001", nil, nil)
-	if got != "" {
-		t.Fatalf("没记忆、没称呼时应当是空串, 实得 %q", got)
+	if got == "" {
+		t.Fatal("没记忆、没称呼时整段消失了 —— 模型会去别处找名字")
+	}
+	if strings.Contains(got, "叫他「") {
+		t.Fatalf("没设称呼却渲染了一个称呼: %q", got)
 	}
 	// ⚠️ 而**只有称呼、没有记忆**时, 它必须仍然渲染出来 ——
 	// "他叫什么"与"我知道他什么"是两件事 ✓。

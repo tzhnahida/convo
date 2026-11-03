@@ -435,6 +435,8 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 		State:      state,
 		ActionKind: ActImmediate,
 		Teaching:   teaching,
+		// 私聊只有一个对象: 自己的称呼填上, "别人"恒空 (addressSplit 对私聊直接返回空)。
+		SelfAddress: func() string { _, a := e.displayNameOf(DefaultSceneKey, fmt.Sprint(e.UserID)); return a }(),
 		// §5.1 关系 (天档): 私聊注入**人物层**那一份 ——
 		// 群与私聊是同一个人, 而这一行就是「它记得我们是什么关系」的落点。
 		// ⚠️ 段位是**天档** (段 6a3), 不会砍前缀缓存。
@@ -584,7 +586,9 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 		//
 		// 根因是 `ImageFiles` 不认桥接方的 `path` 字段 (已修);
 		// 但**存量那些已经这么躺着了**, 所以这里也要认。
-		line := m.Payload
+		// ⚠️ 旧 sticker 载荷是 `486|data/convo/stickers/ja/x.gif` (落库格式, 不是人话)。
+		// 它一旦被当成"它以前说过的话"注入, 迟早会被原样复述出来 → 按 kind 归一。
+		line := StickerHistoryLine(m.Kind, m.Payload)
 		if strings.TrimSpace(line) == "" {
 			line = "[图片]"
 		}
@@ -1054,6 +1058,12 @@ func (e *Engine) sendFrame(ctx context.Context, frame OutputFrame) error {
 			// §8.4: 后处理只做「减」(丢句 / 去语气词 / 压标点 / 截到句界), **不改语义** ——
 			// style.go 有语料级不变式: 输出必须是输入的 rune 子序列, 且不含输入里没有的字符。
 			o.text = ApplyStyle(o.text, styleOpt)
+			// §8.4 出口整形: 换行压平 / 削省略号 / 一轮至多 1 个问号 (bubble.go)。
+			// ⚠️ 放在 ApplyStyle **之后**: ApplyStyle 的不变式是"只减不改", 而整形会动空格与标点边界。
+			o.text = NormalizeBubble(o.text, BubbleMaxQuestions)
+			if o.text == "" {
+				continue // 整形后什么都不剩 = 这条不该发
+			}
 			// 打字节奏: **打完了才发** —— 与群发同一条尺子 (typing.go)。
 			// ⚠️ 私聊原来完全没有这一段, 只有"回复前等 5-25 秒"那个与字数无关的随机延迟。
 			if d := e.groupTypingDelay(o.text); d > 0 {
@@ -1078,7 +1088,9 @@ func (e *Engine) sendFrame(ctx context.Context, frame OutputFrame) error {
 				log.Warn("convo:engine", "send sticker: %v", err)
 				continue
 			}
-			_, _ = e.Store.InsertMessage("ai", "qq", "sticker", fmt.Sprintf("%d|%s", o.stickerID, o.path))
+			// ⚠️ 载荷统一写「[表情]」: 下面是它**说过的话/做过的事**, 不是磁盘路径。
+			// (旧格式 `486|data/convo/stickers/ja/x.gif` 见 bubble.go 的 StickerHistoryLine)
+			_, _ = e.Store.InsertMessage("ai", "qq", "sticker", "[表情]")
 			_ = e.Store.AdjustAffinity(o.stickerID, 0) // use_count+1 (affinity 不动)
 			sentAny = true                             // 表情包发送成功也计入 (纯 sticker 帧不触发兜底)
 		}

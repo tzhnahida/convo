@@ -90,6 +90,16 @@ type DialogInput struct {
 	SceneKey string
 	// SpeakerUIN 群里的发言人 (§6.10.1: 身份锚是 uin, 不是昵称)。
 	SpeakerUIN string
+	// SelfAddress 本轮说话人在**这个场景**的称呼 (空 = 没给他起过)。
+	//
+	// ⚠️ 它与 `OtherAddresses` 一起供 `AddressViolations` 用 (§6.10.4 称呼闸):
+	// 当轮说话人**没有**称呼时, 回复里出现别人的称呼 = 叫错人 (2026-11-03 串人事故)。
+	SelfAddress string
+	// OtherAddresses 同一场景里**别人**的称呼 (§6.10.4)。
+	//
+	// ⚠️ 只放 `address_as`(称呼), **不放显示名** —— 显示名可以出现在
+	// 「谁说了什么」里, 而称呼只能指向那个人。
+	OtherAddresses []string
 	// PersonNote §6.10.3 **主体分区注入**: 「关于**这一轮说话的人**」那一块。
 	//
 	// ⚠️ 它与 `Memories` **不是一回事**: `Memories` 是**按场景**取的(整个群的),
@@ -330,7 +340,14 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
   「唉」「行」「能」这种一个字的消息**必须能发出来**; 每条都写十几个字才是假的。
 - **少用问句** —— 实测群友只有 8%% 的消息带问号。一句一个问号 = 在采访对方, 不是在聊天。
 - **长度必须有起伏**: 大多数时候 1~15 字像打字;十轮里可以有一轮**在一条消息里**多说几句 (一口气讲完, 到 60 字), 但**绝不拆成好几条发**。
-  (实测: 原措辞「3-5 句」被读成"分条发", 于是对方发一句「哇袄!」它连回 5 条 —— 拆条是刷屏, 不是起伏。)永远一句一行、永远十几个字, 同样不像人。`, lang))
+  (实测: 原措辞「3-5 句」被读成"分条发", 于是对方发一句「哇袄!」它连回 5 条 —— 拆条是刷屏, 不是起伏。)永远一句一行、永远十几个字, 同样不像人。
+- **一条消息就是一口气**: 一个 text 项里**不许换行、不许空行**。
+  (实测: 人类 2204 条消息里含换行的只有 24 条、含空行的 3 条 —— 两句话糊成一条是打字机, 不是人。)
+  想说第二件事 → 要么挤进同一个缝里, 要么这次先不说; **绝不空行分两段**。
+- **别拿省略号打头收尾**: 「唔……」「真的……」是 AI 腔 (实测人只 0.2%%, 它 4.6%%)。
+  停顿用空格或直接断句, 别用「……」拖尾。
+- **一轮最多 1 个问号**: 第二句再问 = 在采访对方 (实测群友只有 6.2%% 的消息带问号)。
+- 对方**连着发好几条**时, 别一条一条回: 挑一句**整体**回应, 剩下的当没看见。`, lang))
 
 	// 道德底线 (稳定段): 属于"你是谁"的那一类, 与人设同步变化, 放前面不伤缓存。
 	if in.MoralsNote != "" {
@@ -422,6 +439,9 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 	// 段 5b: 待求证 (慢)
 	if len(in.Pending) > 0 {
 		b.WriteString("\n【待求证】(用自然语言向 ta 确认一条, 别一次问多条)\n")
+		// ⚠️ 这些是**关于别人**的旧事 (2026-11-03 串人事故): 模型曾把「老缇战术/老缇要上班」
+		// 当成本轮说话人的事, 冲着另一个人喊「老缇」。待求证 = 跟**当前这个人**确认, 不是报户口。
+		b.WriteString("⚠️ 这些是关于**别人**的记忆 —— 别拿去问当前这个人, 也别把别人的名字安到他头上。\n")
 		for _, m := range in.Pending {
 			fmt.Fprintf(&b, "- [%s] 我好像记得: %s (对吗?)\n", m.MemID, m.V)
 		}
@@ -519,7 +539,8 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 			"**开头必须是一句问候**: 早 / 早啊 起了没 / 在吗 / 今天忙吗 / 昨晚睡得怎么样。\n"+
 			"⚠️ 不许用评论开头 (「这么早就坐着看书了」是评论, 不是招呼); "+
 			"也不许只问 ta 正在做什么 (「周末赶什么衣服」这种不算问候)。\n"+
-			"自己那点事最多半句带过, 也可以完全不提。**只发一条**; 不要连着发、不要自问自答; **也别接着之前的旧话题说**。", next)
+			"⚠️ 这句**今天**可以这么开口 (换一天就该换一句, 天天同一句就成了闹钟): 「%s」\n"+
+			"自己那点事最多半句带过, 也可以完全不提。**只发一条**; 不要连着发、不要自问自答; **也别接着之前的旧话题说**。", next, dayOpener(clock.Now()))
 	case ActReturnGreet:
 		b.WriteString("你们好几天没说话了, 主动打个招呼, 自然一点, 别啰嗦。")
 	case ActNoInput:
@@ -871,6 +892,9 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 		// 道德词表闸 (2026-10-23): 侮辱/威胁/贬低句式 —— 确定性, 零 LLM 成本。
 		// 放在审核机之前: 能算出来的先算, 别为一句脏话多花一次调用。
 		violations = append(violations, MoralViolations(FrameText(frame))...)
+		// §6.10.4 称呼闸 (2026-11-03 串人): 当轮说话人没有称呼时,
+		// 回复里出现**别人的**称呼 → 违规。确定性, 零成本。
+		violations = append(violations, AddressViolations(FrameText(frame), in.SelfAddress, in.OtherAddresses)...)
 		// 审核机: 人设 + 教练规则 + 这一轮上下文 → 过 / 不过。
 		// 不过就走**同一条重试链** (原因会进【修正】那一句), 仍不过才不发。
 		// ⚠️ 只在规则层已经通过时才审 —— 硬拒的句子没必要再花一次调用。
@@ -899,6 +923,7 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 				}
 				v2 = append(v2, GroundingViolations(FrameText(frame2), in)...)
 				v2 = append(v2, MoralViolations(FrameText(frame2))...)
+				v2 = append(v2, AddressViolations(FrameText(frame2), in.SelfAddress, in.OtherAddresses)...)
 				if len(v2) == 0 && d.Review != nil {
 					if v := d.Review(ctx, in, p, frame2); !v.OK {
 						v2 = append(v2, "审核机打回: "+v.Reason)
@@ -946,7 +971,37 @@ func (d *DialogEngine) Reply(ctx context.Context, c Chatter, in DialogInput, p *
 		return OutputFrame{}, fmt.Errorf("no model output: %w", err)
 	}
 	noteFailure(raw, false) // 有输出但帧不合法: 降级放行 (计入帧失败率, 并留样本)
-	return degradeFrame(raw), nil
+	g := degradeFrame(raw)
+	// ⚠️ 2026-11-03 **串人事故的真正出口**: 降级帧原来直接 return, **绕过整条校验链**。
+	//
+	// 那天的降级帧是「这不就是你想参加的那个嘛 老缇 / 人家还让你别外传 我就当没看见」:
+	// 名字借了别人的、事实是编的、图注只有「一张图, 没细看」—— 三道已有的闸
+	// (称呼闸 / 事实溯源 / 道德词表) 一条也没跑, 因为它们在 `err == nil` 分支里。
+	// **兜底路径是校验黑洞**这件事在 2026-10-23 的工具协议泄漏上已经踩过一次;
+	// 这次把出口统一: 降级帧也过确定性校验 (不过审核机 —— 降级本来就是为了少打一次调用)。
+	if v := d.degradedViolations(g, in, p); len(v) > 0 {
+		noteHardRefused(v[0])
+		log.Warn("convo:dialog", "降级帧也违规: 本条不发送 (%s)", v[0])
+		return OutputFrame{Refused: true, RefuseReason: v[0]}, nil
+	}
+	return g, nil
+}
+
+// degradedViolations 降级帧的确定性校验 (与主链同一套, 不含审核机)。
+func (d *DialogEngine) degradedViolations(f OutputFrame, in DialogInput, p *PersonaProfile) []string {
+	if f.Refused {
+		return nil
+	}
+	text := FrameText(f)
+	var v []string
+	v = append(v, d.ValidateFrame(f, in, p)...)
+	if echo := d.selfEchoViolation(f); echo != "" {
+		v = append(v, echo)
+	}
+	v = append(v, GroundingViolations(text, in)...)
+	v = append(v, MoralViolations(text)...)
+	v = append(v, AddressViolations(text, in.SelfAddress, in.OtherAddresses)...)
+	return v
 }
 
 // degradeFrame 降级帧: LLM 输出可能是 (a) 纯文本 (b) 残 JSON 帧 — 只提取 text 项,

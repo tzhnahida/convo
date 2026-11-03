@@ -59,10 +59,19 @@ func (e *Engine) displayNameOf(sceneKey, uin string) (name, address string) {
 // 而 uin 为空时**不带括号**(与 `SceneHistoryLine` 同一条纪律:
 // "有个人"和"uin 是问号"是两件事)。
 func PersonNoteLine(displayName, address, uin string, mems []PersonMemory, facts []PersonMemory) string {
-	if len(mems) == 0 && len(facts) == 0 && strings.TrimSpace(address) == "" {
+	// ⚠️ 2026-11-03 **串人事故**: 原来这里的条件是
+	//
+	//	`len(mems)==0 && len(facts)==0 && address==""` → 返回空串
+	//
+	// 于是一个**没有记忆、没有称呼**的人在提示词里根本不存在 —— 当轮说话人
+	// uin 2735604537 就是这样消失的, 模型只好从别处借一个名字, 借到了同群另一个人的
+	// 外号「老缇」(uin 351390754), 说出「这不就是你想参加的那个嘛 老缇」。
+	// **身份锚是名字本身, 不是"关于他的记忆"**: 有名字就必须有锚。
+	name := strings.TrimSpace(displayName)
+	addr := strings.TrimSpace(address)
+	if name == "" && addr == "" && strings.TrimSpace(uin) == "" && len(mems) == 0 && len(facts) == 0 {
 		return ""
 	}
-	name := strings.TrimSpace(displayName)
 	if name == "" {
 		name = "这个人"
 	}
@@ -76,8 +85,14 @@ func PersonNoteLine(displayName, address, uin string, mems []PersonMemory, facts
 	fmt.Fprintf(&b, "\n【关于**这一轮说话的人** %s】", who)
 	// ⚠️ **称呼按场景各存一份** (设计稿 L1298): 在 A 群叫外号、在 B 群叫全名 ✓。
 	// 而它到这里已经是**这个场景那一行**取出来的 ✓ —— "不许串"由查询保证 ✓。
-	if a := strings.TrimSpace(address); a != "" {
-		fmt.Fprintf(&b, "\n（你在这个地方叫他「%s」—— 别的场景怎么叫是另一回事）", a)
+	if addr != "" {
+		fmt.Fprintf(&b, "\n（你在这个地方叫他「%s」—— 别的场景怎么叫是另一回事）", addr)
+	} else {
+		// ⚠️ 2026-11-03: 没有称呼时**必须明说没有**。
+		// 沉默在这里不是中性: 模型会自己去别处找一个 (见本函数开头的串人事故),
+		// 而它找到的那个名字属于**另一个人**。
+		b.WriteString("\n（你**没有**给他起过称呼: 要么直呼名字, 要么干脆不带称呼。" +
+			"⚠️ 别拿别人的外号叫他 —— 这个群里别人的称呼跟你没关系）")
 	}
 	if len(mems) > 0 {
 		b.WriteString("\n（他的事, 只有他在场时才用得上; 别人在这个群里的事不在你的上下文里）\n")

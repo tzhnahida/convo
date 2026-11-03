@@ -966,6 +966,8 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		return fmt.Errorf("no profile: %w", err)
 	}
 	owner := e.ownerKey()
+	// §6.10.3 称呼闸: 本场景的称呼分成"这轮说话人的"和"别人的"两份 (一次查询)。
+	selfAddr, otherAddrs := e.addressSplit(sceneKey, uin)
 	din := DialogInput{
 		UserText:   text,
 		CoachNote:  e.coachNote(sceneKey),
@@ -980,7 +982,11 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		SelfNote:   e.selfActionNote(), // ← 它自己的对外动作也要进事实层
 		MoralsNote: MoralsNote(p),      // ← 道德底线 (随人设: 被骂的反应由角色决定)
 		SpeakerUIN: uin,                // ← 护栏 3「偏向可见」的数据源
-		Stance:     StanceSpeak,
+		// §6.10.3 称呼闸 (2026-11-03 串人事故): 光有 uin 不够 —— 模型手里还有**外号**。
+		// 这一轮说话的人没起过称呼, 而回复里冒出同群**别人**的称呼 = 叫错了人。
+		SelfAddress:    selfAddr,
+		OtherAddresses: otherAddrs,
+		Stance:         StanceSpeak,
 		// ⚠️ 只有当这张图**值得看**时才有值 (照片)。表情包走标签, 不走这里。
 		//
 		// ⚠️ **没带图但它提了图 → 去看最近那张** (2026-10-14 实测补的)。
@@ -1057,7 +1063,9 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 	for _, item := range frame.Reply {
 		switch item.Kind {
 		case "text":
-			txt := strings.TrimSpace(item.Text)
+			// §8.4 出口整形: 换行压平 / 削省略号 / 一轮至多 1 个问号 (bubble.go)。
+			// ⚠️ 整形放在 count/cap 判定**之前**: 整形后为空的条目根本不该占额度。
+			txt := NormalizeBubble(item.Text, BubbleMaxQuestions)
 			if txt == "" {
 				continue
 			}
