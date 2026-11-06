@@ -1060,12 +1060,14 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 	}
 	// 2026-10-23 P2: 群聊一轮**只说一句** (表情另算) —— 拆条是刷屏。
 	textSent := 0
+	stickerSent := 0 // D: 本轮已发几张表情
 	for _, item := range frame.Reply {
 		switch item.Kind {
 		case "text":
 			// §8.4 出口整形: 换行压平 / 削省略号 / 一轮至多 1 个问号 (bubble.go)。
 			// ⚠️ 整形放在 count/cap 判定**之前**: 整形后为空的条目根本不该占额度。
-			txt := NormalizeBubble(item.Text, BubbleMaxQuestions)
+			// E (2026-11-06 用户批准): 问句上限按最近几轮浮动 (刚问过就别再问)。
+			txt := normalizeWithQuestionCap(item.Text, e.QuestionCapFor(sceneKey))
 			if txt == "" {
 				continue
 			}
@@ -1100,6 +1102,12 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 			_, _ = e.Store.InsertMessageFull("ai", "qq", kind, txt,
 				MsgMeta{Origin: OriginAIToUser, SceneKey: sceneKey})
 		case "sticker":
+			// D (2026-11-06 用户批准): 表情包节奏闸 —— 与私聊同一把尺子。
+			// ① 文字后 20 秒内不发; ② 两张之间 ≥60 秒; ③ 一轮最多一张。
+			if stickerSent >= StickerMaxPerTurn || textSent > 0 || !e.StickerPaceOK(sceneKey) {
+				log.Info("convo:engine", "群发表情拦截: 节奏闸 (本轮 %d 张, 文字先发 %v)", stickerSent, textSent > 0)
+				continue
+			}
 			st, serr := e.Store.WeightedPick(e.Cfg.Stickers.CapPerSticker)
 			if serr != nil || st == nil || st.LocalPath == "" {
 				continue
@@ -1108,6 +1116,7 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 				log.Warn("convo:engine", "群发表情失败: %v", serr)
 				continue
 			}
+			stickerSent++
 			_, _ = e.Store.InsertMessageFull("ai", "qq", "sticker", "[表情]",
 				MsgMeta{Origin: OriginAIToUser, SceneKey: sceneKey})
 		}

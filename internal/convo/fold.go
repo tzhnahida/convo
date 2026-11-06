@@ -9,6 +9,11 @@ import (
 	"unicode"
 )
 
+// foldLabelPrefixRe 视觉标注的前缀：`(表情 — 陈述)`、`（照片）` 这种。
+//
+// ⚠️ 只剥**开头**的、带括号的 —— 正文里出现「表情」两个字是真在说话，不能动。
+var foldLabelPrefixRe = regexp.MustCompile(`^[（(]\s*(表情|照片|图片|视频|文件|语音)[^）)]{0,24}[）)]\s*`)
+
 // foldImageMarkRe 图注标记：「[图: 一个表情]」「[图: 一张图, 没细看]」。
 //
 // ⚠️ 折叠话题前必须先剥掉它 —— 否则图注里的词会变成"今天在聊什么"。
@@ -184,7 +189,21 @@ func FoldPlainText(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return ""
 	}
-	out := foldImageMarkRe.ReplaceAllString(s, " ")
+	// C1 (2026-11-06 用户批准): **先剥视觉标注的前缀**。
+	//
+	// ⚠️ 图注落库的样子是 `(表情 — 陈述) [图: …]` —— 剥了 [图: …] 之后,
+	// 剩下的 `(表情 — 陈述)` 还留在正文里, 于是「表情」成了当天最高频的话题词。
+	// 这正是 11-03～11-05 每天都折出「主要在聊：表情」的原因 (不是群友在聊表情,
+	// 是**标注自己在当话题**)。
+	out := s
+	for i := 0; i < 3; i++ { // 最多剥三层 (偶尔会叠两个标注)
+		next := foldLabelPrefixRe.ReplaceAllString(out, " ")
+		if next == out {
+			break
+		}
+		out = next
+	}
+	out = foldImageMarkRe.ReplaceAllString(out, " ")
 	out = strings.NewReplacer("[图片]", " ", "[表情]", " ", "[图]", " ", "[图没读到]", " ", "[语音]", " ").Replace(out)
 	return strings.Join(strings.Fields(out), " ")
 }
@@ -221,10 +240,12 @@ func FoldText(r FoldResult) string {
 		return "今天群里没什么正经话题，随便扯了几句"
 	}
 	topic := r.Topics[0]
+	// C2 (2026-11-06): 「聊得最多的是」还是排行榜口吻 —— 人回想一天不会说"最多的是",
+	// 只会说"在聊啥"。所以去掉排名腔, 保留「有人说到」那句具体的话。
 	if r.Quote == "" {
-		return "今天群里聊得最多的是「" + topic + "」"
+		return "今天群里在聊「" + topic + "」"
 	}
-	return "今天群里聊得最多的是「" + topic + "」，有人说到「" + r.Quote + "」"
+	return "今天群里在聊「" + topic + "」，有人说到「" + r.Quote + "」"
 }
 
 // FoldLine 折叠结果 → 记忆文本。空结果返回 false（**没有这一天**，不是空记忆）。

@@ -155,7 +155,10 @@ func (s *Store) TopSlang(limit int) ([]Slang, error) {
 		// 2026-10-24: **每天轮换** —— 库里有一百多条时, 固定取前 12 条会让
 		// 新学的/内置的梗永远轮不到 (注入列表是它「知道哪些」的展示窗口)。
 		// 用 (phrase+日期) 的确定性抖动, 同一天内稳定, 隔天换一批。
-		sc += 0.1 * float64(dayJitter(sl.Phrase, today))
+		// ⚠️ dayJitter 返回 0..999, **不是 0..1** —— 必须先归一再乘 0.1。
+		// (原来写成 `sc += 0.1 * float64(dayJitter(...))` 等于给每条加 0~99.9 分,
+		//  于是置信度/状态/衰减全部失去意义, 排序变成纯随机 —— 2026-11-06 全量测试暴露。)
+		sc += 0.1 * (float64(dayJitter(sl.Phrase, today)) / 1000.0)
 		list = append(list, scored{sl: sl, score: sc})
 	}
 	for i := 0; i < len(list) && i < limit; i++ {

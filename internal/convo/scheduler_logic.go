@@ -102,9 +102,16 @@ const (
 	ActReturnGreet  = "return_greet"  // 3 天无交互回归仪式
 	ActStealReply   = "steal_reply"   // slack 摸鱼偷回
 	ActDelayedReply = "delayed_reply" // busy 延迟回复到点
-	ActBreakFocus   = "break_focus"   // focus 破功 (秒回豁免)
-	ActImmediate    = "immediate"     // free/slack 秒回
-	ActResume       = "resume"        // §4.3 中断-恢复: "我拿个外卖回来了"
+	// ActBusyDelay 延迟回复**执行时**的动作名 (ActDelayedReply 是调度侧的"该发了")。
+	//
+	// ⚠️ 分开命名是因为两者问的问题不一样: 调度侧只判"到点没有";
+	// 执行侧要告诉模型"你这条是隔了一阵才回的" —— 否则它会把几小时前的
+	// 话头当成当下接着聊 (11-05 22:30 那次三连就是这么来的)。
+	// ⚠️ 以前这里是字面量 "busydelay", 于是 dialog.go 里根本没这一段.
+	ActBusyDelay  = "busydelay"
+	ActBreakFocus = "break_focus" // focus 破功 (秒回豁免)
+	ActImmediate  = "immediate"   // free/slack 秒回
+	ActResume     = "resume"      // §4.3 中断-恢复: "我拿个外卖回来了"
 )
 
 // ShouldOpenSlot 当前槽是否允许主动开口 (free 与 slack 允许, focus/busy/sleep 不允许)。

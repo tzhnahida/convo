@@ -67,8 +67,6 @@ type Engine struct {
 
 	// ChimeRollFn 插话掷骰, nil = Dice。**测试注入用**。
 	ChimeRollFn func(n int) int
-	// StickerRollFn 表情包附带概率的掷骰, nil = Dice。**测试注入用** (理由同 ChimeRollFn)。
-	StickerRollFn func(n int) int
 	// DayMoodFn 今天是什么日子 (低意愿/高意愿/平常), nil = DayMoodOf(今天)。**测试注入用**。
 	//
 	// ⚠️ 理由与 ChimeRollFn 一模一样: 它是**按日期**确定性的, 而约 15% 的日子是低意愿日 ——
@@ -361,6 +359,17 @@ func (e *Engine) onUserText(ctx context.Context, text, imagePath string) error {
 			log.Info("convo:engine", "拒绝权 armed —— 这一轮不排延迟回复, 走即时直说 (§4.3 C3)")
 			immediate = true
 		} else {
+			// A1 (2026-11-06 用户批准): **没什么可回的消息不排延迟回复**。
+			//
+			// 事故: 11-05 21:10 owner 连发两条纯表情 → 排了 79 分钟的延迟回复 →
+			// 22:30 它醒来, 对着四天前的旧对话说了三句.
+			// 表情/图片这种"没有一句话"的消息本来就不该欠一条回复 ——
+			// 排进去的是一条**迟早要还的债**, 而到那时触发它的语境早没了.
+			// ⚠️ 带图的消息仍算有内容 (照片是他分享的东西, 不是叹气).
+			if !busyNeedsDelayedReply(text, imagePath) {
+				log.Info("convo:engine", "busy: 这条没有可回的话 (纯表情/占位), 不排延迟回复: %q", text)
+				return nil
+			}
 			// busy: 排延迟回复 (骰子在系统: 30-90min)
 			e.scheduleDelayedReply()
 			return nil
@@ -568,6 +577,23 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 	}
 
 	var out []string
+	// B (2026-11-06 用户批准): **注入的历史必须有时间锚**。
+	//
+	// ⚠️ 事故: 11-05 22:30 那次 review 的【最近对话】长这样 ——
+	//   1 她: 早 起了没 / 2 你: 起了 / 3 她: 嗯 起来了 / 你那边呢 …
+	// 行首只有当日序号, **跨天会重号** (1,2,3,2,3), 而且没有任何日期。
+	// 模型读到的就是「刚才」, 于是把 10-31 的话头当成当下接着演。
+	//
+	// 修法: 不动行首格式 (那套有 21 处用例钉着, 改了等于全部重写),
+	// 只在**跨天 / 断档 ≥3 小时**的地方插一行分隔。
+	prevTS := ""
+	add := func(row, ts string) {
+		if sep := HistoryTimeGap(prevTS, ts, clock.Today()); sep != "" {
+			out = append(out, sep)
+		}
+		prevTS = ts
+		out = append(out, row)
+	}
 	for i := len(msgs) - 1; i >= 0; i-- {
 		m := msgs[i]
 		// ⚠️ **`image` / `sticker` 必须放行** —— 它们不是噪声, 是"群里发生了什么"。
@@ -621,26 +647,26 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 			// 那既难看又**丢了信息**: "有个人说的"和"uin 是问号"是两件事。
 			// (这个 bug 是变异测试的输出意外暴露的 —— 我本来只在测私聊格式。)
 			if m.Dir == "ai" {
-				out = append(out, fmt.Sprintf("%d 我: %s%s", m.DaySeq, line, sfx)) // 它自己是"我" ✓ (群主定的编号里不占号)
+				add(fmt.Sprintf("%d 我: %s%s", m.DaySeq, line, sfx), m.TS) // 它自己是"我" ✓ (群主定的编号里不占号)
 				continue
 			}
 			// ⚠️ **空 uin 走更早的回退, 不许进 SceneHistoryLine** ——
 			// `UinTail("")` 返回的就是 `????`, 而"有个人说的"和"uin 是问号"是两件事。
 			// 这一条有专门用例钉着(它当初是**变异测试**意外暴露的)。
 			if strings.TrimSpace(m.SenderUIN) == "" {
-				out = append(out, fmt.Sprintf("%d 群友: %s%s", m.DaySeq, line, sfx))
+				add(fmt.Sprintf("%d 群友: %s%s", m.DaySeq, line, sfx), m.TS)
 				continue
 			}
 			// ⚠️ §6.10.3 要的格式是 **`昵称(uin 后四位): 内容`**, 不是"群友+尾号"。
 			// 昵称让人读得顺, 尾号保证**两个人同名也分得开**。
-			out = append(out, fmt.Sprintf("%d %d: %s%s", m.DaySeq, handle[m.SenderUIN], line, sfx))
+			add(fmt.Sprintf("%d %d: %s%s", m.DaySeq, handle[m.SenderUIN], line, sfx), m.TS)
 			continue
 		}
 		who := "你"
 		if m.Dir == "ai" {
 			who = "她"
 		}
-		out = append(out, fmt.Sprintf("%d %s: %s%s", m.DaySeq, who, line, sfx))
+		add(fmt.Sprintf("%d %s: %s%s", m.DaySeq, who, line, sfx), m.TS)
 	}
 	// 同一张图的第 1 次留完整内容, 第 2 次起换成「内容往上找」(短标对得上)。
 	out = CollapseRepeatedImageMarks(out)
@@ -893,8 +919,9 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 		// 片段计数各自只有 1-2, 那条闸一声不响。放在**出口**而不是提示词里:
 		// 能把的住复读的只有"发之前比一遍"。
 		frame = e.dropSelfEcho(frame)
-		// 文字回复附带一张表情包 (群友 14% vs 它 1.7%, owner 定 40%)。
-		frame = e.maybeAttachSticker(frame)
+		// 2026-11-06 停用: 同轮「文字 + 表情」正是机器人指纹 (D 项证据: 38 条纯表情里
+		// 21 条紧跟自己上一句文字、10 条间隔 <5 秒)。表情仍由模型在帧里自己选,
+		// 出口的 StickerPaceOK 负责「文字后 20 秒内不发」。
 		// 口头答应了一件未来时间的事 → 系统补记 (说话与记账对齐)。
 		e.maybeRecordVerbalPromise(in, frame)
 	}
@@ -1047,6 +1074,8 @@ func (e *Engine) sendFrame(ctx context.Context, frame OutputFrame) error {
 
 	// 2. 逐条发送: 条间随机间隔 (真人打字节奏), 最后一条后不等待
 	sentAny := false
+	stickerSent := 0         // D: 本轮已发几张表情
+	textSentInFrame := false // D: 本轮是否已经发过文字 (文字后不许紧贴表情)
 	for i, o := range ops {
 		if i > 0 {
 			if err := sleepReplyGap(ctx, pacingFactor); err != nil {
@@ -1060,7 +1089,10 @@ func (e *Engine) sendFrame(ctx context.Context, frame OutputFrame) error {
 			o.text = ApplyStyle(o.text, styleOpt)
 			// §8.4 出口整形: 换行压平 / 削省略号 / 一轮至多 1 个问号 (bubble.go)。
 			// ⚠️ 放在 ApplyStyle **之后**: ApplyStyle 的不变式是"只减不改", 而整形会动空格与标点边界。
-			o.text = NormalizeBubble(o.text, BubbleMaxQuestions)
+			// E (2026-11-06 用户批准): 问句上限**按最近几轮浮动** ——
+			// 刚连着问过两句, 这一轮就一个问号都不许有 (真人不会每句都采访对方)。
+			// ⚠️ 固定 1 个问号拦不住累积: 每轮一个, 十轮就是十个。
+			o.text = normalizeWithQuestionCap(o.text, e.QuestionCapFor(DefaultSceneKey))
 			if o.text == "" {
 				continue // 整形后什么都不剩 = 这条不该发
 			}
@@ -1082,8 +1114,21 @@ func (e *Engine) sendFrame(ctx context.Context, frame OutputFrame) error {
 			_, _ = e.Store.InsertMessage("ai", "qq", kind, o.text)
 			e.Store.TouchSlangText(o.text)                // 模块 11: AI 用了已知梗 → 计数 (生命周期)
 			noteBodyReply(be.Active, len([]rune(o.text))) // §4.2: 病中 vs 平时的句长样本
+			textSentInFrame = true
 			sentAny = true
 		case "sticker":
+			// D (2026-11-06 用户批准): **表情包有节奏**。
+			//
+			// 实测 (11-06): 12:54:46 文字与表情同一秒、19:26:15 连发两张一样的、
+			// 19:26:29 文字 + 19:26:30 表情 —— 真人不会这样贴图。
+			// 三条硬闸: ① 文字后 20 秒内不发; ② 两张之间至少 60 秒; ③ 一轮最多一张。
+			// ⚠️ 纯表情帧被闸掉时**不许**跑兜底句 (「表情包还在挑」= 自己造一句假话),
+			// 所以这里把 hasSticker 复位, 让第 3 步的兜底判定看不到这一张。
+			if stickerSent >= StickerMaxPerTurn || textSentInFrame || !e.StickerPaceOK(DefaultSceneKey) {
+				log.Info("convo:engine", "sticker: 节奏闸拦下这一张 (本轮已发 %d 张, 文字先发 %v)", stickerSent, textSentInFrame)
+				hasSticker = false
+				continue
+			}
 			if err := e.Sender.SendImage(e.UserID, o.path); err != nil {
 				log.Warn("convo:engine", "send sticker: %v", err)
 				continue
@@ -1092,7 +1137,8 @@ func (e *Engine) sendFrame(ctx context.Context, frame OutputFrame) error {
 			// (旧格式 `486|data/convo/stickers/ja/x.gif` 见 bubble.go 的 StickerHistoryLine)
 			_, _ = e.Store.InsertMessage("ai", "qq", "sticker", "[表情]")
 			_ = e.Store.AdjustAffinity(o.stickerID, 0) // use_count+1 (affinity 不动)
-			sentAny = true                             // 表情包发送成功也计入 (纯 sticker 帧不触发兜底)
+			stickerSent++
+			sentAny = true // 表情包发送成功也计入 (纯 sticker 帧不触发兜底)
 		}
 	}
 	// 3. sticker-only 帧全失败 → 兜底文本, 绝不让"说想发但发不出"变成无声 (2026-09-06 修复)
@@ -1247,8 +1293,12 @@ func (e *Engine) OnTick(ctx context.Context, action TickAction) error {
 		}
 		return e.proactive(ctx, p, DialogInput{State: e.currentState(), ActionKind: ActStealReply, UserText: last}, "rounds", day)
 	case ActDelayedReply:
-		e.clearDelayedReply()
-		return e.proactive(ctx, p, DialogInput{State: e.currentState(), ActionKind: "busydelay"}, "rounds", day)
+		// A3 (2026-11-06 用户批准): 回来时**重判**, 不是照着几分钟前的判断照发.
+		if ok, why := e.consumeDelayedReply(); !ok {
+			log.Info("convo:engine", "busy 延迟回复作废: %s", why)
+			return nil
+		}
+		return e.proactive(ctx, p, DialogInput{State: e.currentState(), ActionKind: ActBusyDelay}, "rounds", day)
 	case ActBreakFocus:
 		// ⚠️ **必须限定私聊场景** (2026-10-14 生产事故的直接修复)。
 		//
@@ -1352,6 +1402,15 @@ func (e *Engine) proactive(ctx context.Context, p *PersonaProfile, in DialogInpu
 				frame = OutputFrame{Reply: []FrameItem{{Kind: "text", Text: fallbackGreeting(clock.Now())}}}
 			}
 		}
+	}
+	// A3: 延迟回复 = **隔了好一阵才回一句**, 不是把当时的对话接回来.
+	//
+	// 两条硬闸, 与预告同源 (2026-10-27 那次: 预告一发三条就成了行程播报):
+	// ① 只发一条 —— 补一句话是自然, 补三条就是"憋了半天全倒出来";
+	// ② 不追加 ask_share —— 一条几十分钟前的消息, 追着问细节最假.
+	if in.ActionKind == ActBusyDelay {
+		frame.Reply = onlyFirstBubble(frame.Reply)
+		frame.AskShare = nil
 	}
 	if err := e.sendFrame(ctx, frame); err != nil {
 		return err
@@ -2264,6 +2323,15 @@ func (e *Engine) lastUserTextIn(sceneKey string) (string, error) {
 	return p, err
 }
 
+// busyNeedsDelayedReply busy 状态下这条消息**值不值得**排一条延迟回复 (A1)。
+//
+// ⚠️ 判据是「有没有一句话可回」, 不是「是不是空串」:
+// 纯表情的载荷是 `(表情 — 陈述) [图: …]`, 它非空, 但它**不是一句话**。
+// 带图的消息算有内容 —— 照片是他特意分享的东西, 欠一句评价是自然的。
+func busyNeedsDelayedReply(text, imagePath string) bool {
+	return hasSubstantiveText(text) || strings.TrimSpace(imagePath) != ""
+}
+
 func (e *Engine) scheduleDelayedReply() {
 	minD, maxD := e.Cfg.Sched.BusyDelayMin, e.Cfg.Sched.BusyDelayMax
 	if maxD <= 0 {
@@ -2272,19 +2340,90 @@ func (e *Engine) scheduleDelayedReply() {
 	if minD <= 0 {
 		minD = 30
 	}
+	// A2 (2026-11-06 用户批准): **已经排了一条就不再排**.
+	//
+	// 事故: 21:10:51 同一个 tick 里写了两行 due (35min / 79min), 后一条覆盖前一条 ——
+	// 于是"本来 21:45 该回"变成 22:29, 越拖越晚. 而排队本身是有代价的:
+	// 每覆盖一次, 到点后要去接的话头就更冷.
+	if due, ok := e.pendingReplyDue(); ok && clock.Now().Before(due) {
+		log.Info("convo:engine", "busy: 已经有排队的延迟回复 (due %s), 不覆盖", due.Format(time.RFC3339))
+		return
+	}
 	delay := minD + Dice(maxD-minD+1)
-	due := clock.Now().Add(time.Duration(delay) * time.Minute).Format(time.RFC3339)
+	now := clock.Now()
+	due := now.Add(time.Duration(delay) * time.Minute).Format(time.RFC3339)
 	_ = e.Store.MetaSet("pending_reply_due", due)
+	// 触发时刻也要落库: 到点后要判"这句话是不是太久以前的了" (A3).
+	// ⚠️ 只有一个 due 的话, 到点时**已经无法反推**它是从多早以前排过来的.
+	_ = e.Store.MetaSet("pending_reply_at", now.Format(time.RFC3339))
 	log.Info("convo:engine", "busy: delayed reply in %dmin (due %s)", delay, due)
 }
 
-func (e *Engine) delayedDue() bool {
+// pendingReplyDue 已排队的延迟回复的到点时刻.
+func (e *Engine) pendingReplyDue() (time.Time, bool) {
 	v, ok, err := e.Store.MetaGet("pending_reply_due")
-	if err != nil || !ok || v == "" {
-		return false
+	if err != nil || !ok || strings.TrimSpace(v) == "" {
+		return time.Time{}, false
 	}
-	due, err := time.Parse(time.RFC3339, v)
-	if err != nil {
+	due, perr := time.Parse(time.RFC3339, v)
+	if perr != nil {
+		return time.Time{}, false
+	}
+	return due, true
+}
+
+// DelayedReplyMaxLate 到点后迟到多久就不再补这一条.
+//
+// 迟到 = 进程当时不在/卡住. 补一条**几分钟前**欠的回复是自然的;
+// 补一条**一小时前**欠的, 就是对着空气接话 —— 那时群里早换了话题.
+const DelayedReplyMaxLate = 30 * time.Minute
+
+// DelayedReplyMaxAge 从触发到执行最多隔多久.
+//
+// 比 BusyDelayMax(默认 90min) 宽一点: 正常排队本来就可能是 90 分钟;
+// 超过 3 小时说明这条早就该作废了.
+const DelayedReplyMaxAge = 3 * time.Hour
+
+// consumeDelayedReply 到点后**重判**这条延迟回复还值不值得发 (A3).
+//
+// ⚠️ 延迟通路最大的坑: 它回来时**绕过了所有即时闸门** ——
+// 排队的那些判断 (这条该不该接/是不是在跟它说/是不是已经太久) 全发生在几分钟前,
+// 而执行发生在几十分钟后. 所以回来时必须重新问三个问题:
+// ① 它是不是已经迟到很久; ② 触发的那些话是不是几小时前的; ③ 跨天没有.
+//
+// 返回 (是否发, 作废原因). 无论结果如何都会清掉排队状态 ——
+// 留着的话下一分钟还会再判一次, 变成一个死循环.
+func (e *Engine) consumeDelayedReply() (bool, string) {
+	due, ok := e.pendingReplyDue()
+	atStr, _, _ := e.Store.MetaGet("pending_reply_at")
+	e.clearDelayedReply()
+	if !ok {
+		return false, "没有排队的延迟回复"
+	}
+	now := clock.Now()
+	if late := now.Sub(due); late > DelayedReplyMaxLate {
+		return false, fmt.Sprintf("迟到 %s, 早过了当口", late.Round(time.Minute))
+	}
+	if strings.TrimSpace(atStr) == "" {
+		// 旧版本排的队没有触发时刻 —— 无法判新旧, 按现有行为放行 (但不能永远拦).
+		return true, ""
+	}
+	at, perr := time.Parse(time.RFC3339, atStr)
+	if perr != nil {
+		return true, ""
+	}
+	if at.Format("2006-01-02") != now.Format("2006-01-02") {
+		return false, "排在了前一天"
+	}
+	if age := now.Sub(at); age > DelayedReplyMaxAge {
+		return false, fmt.Sprintf("触发的话是 %s 前的", age.Round(time.Hour))
+	}
+	return true, ""
+}
+
+func (e *Engine) delayedDue() bool {
+	due, ok := e.pendingReplyDue()
+	if !ok {
 		return false
 	}
 	return !clock.Now().Before(due)
@@ -2292,6 +2431,9 @@ func (e *Engine) delayedDue() bool {
 
 func (e *Engine) clearDelayedReply() {
 	_ = e.Store.MetaSet("pending_reply_due", "")
+	// 触发时刻必须一起清: 否则下一次排队读到的还是上一个"旧债"的起点,
+	// 于是任何一条新排的延迟回复都会被判成"触发的话是 N 小时前的"。
+	_ = e.Store.MetaSet("pending_reply_at", "")
 }
 
 func (e *Engine) computeStickerFeedback(text string) {
