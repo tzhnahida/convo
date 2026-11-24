@@ -1,5 +1,7 @@
 # convo
 
+[![CI](https://github.com/tzhnahida/convo/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/tzhnahida/convo/actions/workflows/ci.yml)
+
 **一个住在 IM 好友列表里的 AI 朋友。** 有生活、有脾气、有立场;记得你,也允许自己不完美。
 
 > 这不是助手,不是角色扮演,也不是陪伴玩具。它是一套**把"人味"拆成可判定机制**的实验:
