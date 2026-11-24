@@ -769,6 +769,17 @@ WantedBy=multi-user.target
 页面那道闸也是同一个道理:整个控制台是一个 Go raw string 里的 HTML ——
 **JS 语法错误编译期报不出来**,表现是"控制台下半部分全白",而那和"还没有数据"长得一模一样。
 
+### 16.4 CI 与部署的分工 (2026-11-24)
+
+- **CI 走 GitHub Actions**（`.github/workflows/ci.yml`）：`gofmt` / `go vet` / `go build` /
+  控制台内嵌 JS 语法闸 / `go test ./...` + 三平台交叉编译（linux-arm64、linux-amd64、windows-amd64），
+  每次 push 到 master 或开 PR 都跑。
+- **部署保持手动**：`bash scripts/deploy-pi.sh`。
+
+不做自动部署不是因为懒，是两条硬约束：Pi 只有 IPv6 公网，而 GitHub 托管 runner 是 IPv4，
+连不进去；要在 Pi 上装自托管 runner，又得先从 github.com 下载 110MB 的 runner 包，而那台机器
+到 GitHub 的带宽常年不稳（实测 10 KB/s）。等链路好了再上，方案记在这里。
+
 ---
 
 ## 17. 产品层伦理 (§14)
