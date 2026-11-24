@@ -55,6 +55,10 @@ jobs:
   deploy:
     name: 安装并重启 (Pi)
     needs: build
+    # ⚠️ 默认关: Pi 只有 IPv6 公网 (没有入站 IPv4), GitHub 托管的 runner 连不进去,
+    # 所以这里必须跑在**装在 Pi 上**的自托管 runner。runner 装好并在线后,
+    # 在仓库 Settings → Variables 里加 DEPLOY_ENABLED=true 即启用。
+    if: vars.DEPLOY_ENABLED == 'true'
     # 自托管 runner 就装在 Pi 上, 所以这里不需要 SSH / 不需要入站 IPv4。
     runs-on: [self-hosted, pi]
     timeout-minutes: 10
