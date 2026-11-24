@@ -550,10 +550,10 @@ func TestBuildSystem_TasteAndRevealReachPrompt(t *testing.T) {
 		}
 	}
 	// 段序: 段 4b 是周档, 必须排在段 5(记忆)与段 7.1(最近对话)**之前**。
-	if strings.Index(got, "TASTE_MARK") > strings.Index(got, "【最近对话】") {
+	if strings.Index(got, "TASTE_MARK") > strings.Index(got, "【现在这条线】") {
 		t.Fatal("段 4b 是周档, 排在每轮段之后就是白砍缓存")
 	}
-	if strings.Index(got, "REVEAL_MARK") < strings.Index(got, "【最近对话】") {
+	if strings.Index(got, "REVEAL_MARK") < strings.Index(got, "【现在这条线】") {
 		t.Fatal("段 7.4 是每轮档, 必须排在最近对话之后")
 	}
 }

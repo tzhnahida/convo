@@ -15,10 +15,14 @@ import (
 // ——— 模块 5: 对话引擎 (§8.5 六段注入 + 帧协议) ———
 
 type DialogInput struct {
-	UserText  string // 本轮用户消息 (主动开场时为空)
-	History   string // L1 最近对话 (组装好的 "你:/她:" 文本, 保持上下句联系)
-	State     string // 当前状态 (schedule 裁决)
-	SlotLabel string // 日程槽人话描述 (注入用; Fact 非空时退居备用)
+	UserText string // 本轮用户消息 (主动开场时为空)
+	History  string // L1 现在这条线 (只含"要接的那条 + 同线上的前几句", 不再是整窗流水账)
+	// ThreadNarrow 上下文只给锚点 + 前一条。
+	// 判不出"这话在跟谁说"的插话档要置真 —— 那时没有任何线索支撑更长的上下文,
+	// 多给只会让它把别的话题接进来 (2026-11-24 串事件)。
+	ThreadNarrow bool
+	State        string // 当前状态 (schedule 裁决)
+	SlotLabel    string // 日程槽人话描述 (注入用; Fact 非空时退居备用)
 	// PreviewNext / PreviewAt 预告要进入的**下一个**槽 (状态 + 起点 HH:MM)。
 	// ⚠️ 与 SlotLabel 不是一回事: SlotLabel 是"现在在哪一格", 这里是"马上要去哪一格"。
 	PreviewNext string
@@ -643,9 +647,15 @@ func (d *DialogEngine) buildSystem(in DialogInput, p *PersonaProfile, lang strin
 		b.WriteString("\n【这轮可以说长一点】你最近全是短句 —— 这次把一件事讲完整 (3-5 句)。\n")
 	}
 
-	// 段 7.1: L1 最近对话 (上下句联系的命脉; 缺失=答非所问)
+	// 段 7.1: L1 现在这条线 (上下句联系的命脉; 缺失=答非所问)
+	//
+	// ⚠️ 2026-11-24 (串事件修复): 标题从「最近对话(必须与上下句连贯回应)」改掉 —— 那句话
+	// 等于让模型"把上面所有行串起来", 而多话题群里那几行根本不是一件事。
+	// 现在明确: 最后一行才是要回的, 上面的只是同一条线, **别的线不许接**。
 	if strings.TrimSpace(in.History) != "" {
-		b.WriteString("\n【最近对话】(上下文, 必须与上下句连贯回应)\n" + in.History + historyGapLegend + "\n")
+		b.WriteString("\n【现在这条线】上面最后一行是你要接的; 前面几行是同一条线上的上下文。" +
+			"**别的话题不要接进来** — 不要借用这几行里没出现过的词、事和人。\n" +
+			in.History + historyGapLegend + "\n")
 	}
 
 	// 段 7.2: 梗命中 (用户用了你会的梗 → 接住感知, 粘性关键)

@@ -110,7 +110,7 @@ func TestBuildSystem_ConflictNoteIsPerRound(t *testing.T) {
 	if !strings.Contains(got, "CONFLICT_MARK") {
 		t.Fatal("冲突执行指令没有进提示词")
 	}
-	if strings.Index(got, "CONFLICT_MARK") < strings.Index(got, "【最近对话】") {
+	if strings.Index(got, "CONFLICT_MARK") < strings.Index(got, "【现在这条线】") {
 		t.Fatal("劝架指令是**轮级**的, 必须排在最近对话之后 (挪到前面会毁掉前面的缓存前缀)")
 	}
 }

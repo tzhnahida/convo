@@ -108,7 +108,7 @@ func TestBuildSystem_DayMoodNoteReachesPrompt(t *testing.T) {
 	if !strings.Contains(got, "你今天不太想说话") {
 		t.Fatal("低意愿日的行为约束没有进提示词")
 	}
-	if strings.Index(got, "你今天不太想说话") > strings.Index(got, "【最近对话】") {
+	if strings.Index(got, "你今天不太想说话") > strings.Index(got, "【现在这条线】") {
 		t.Fatal("它是**天档**, 必须排在每轮变化段之前 (段序即缓存策略)")
 	}
 }

@@ -1012,6 +1012,9 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 	// §6.8 归因: 把这次裁决的 reason 与 Δ 带上 (读不到就留空, 不是错误)。
 	if g, ok := e.lastGate(sceneKey); ok {
 		din.StanceReason = g.Reason
+		// 2026-11-24 (串事件修复): 插话档 = 没人点名它, 手上没有任何线索支撑更长的上下文,
+		// 多给只会让它把别的话题接进来 → 只给锚点 + 前一条。
+		din.ThreadNarrow = strings.HasPrefix(g.Reason, "插话")
 	}
 	// §6.6 角色位 (稳定档)。
 	if line, ok := GroupRoleLine(e.RoleOf(p.Name, sceneKey), e.roleSpokeToday()); ok {
@@ -1057,6 +1060,14 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 	if frame.Refused {
 		log.Warn("convo:engine", "群硬拒: 本条未发送 (%s)", frame.RefuseReason)
 		return nil
+	}
+	// 2026-11-24 (串事件修复): 兜底(降级)产物**不进群**。
+	//
+	// 降级 = 模型没给出合法帧, 复用的原始输出是最不可靠的那一类; 实测 12:38
+	// 「回来了就好 别再花几块钱token了」就是它把上一件事的词接进了这一件。
+	// 群里降级只保留表情 (接一下, 不接内容); 连表情都没有就沉默。
+	if frame.Degraded {
+		frame = groupDegradeReaction(frame)
 	}
 	// 2026-10-23 P2: 群聊一轮**只说一句** (表情另算) —— 拆条是刷屏。
 	textSent := 0
@@ -1122,6 +1133,25 @@ func (e *Engine) SpeakInGroupSeeing(ctx context.Context, sceneKey string, groupI
 		}
 	}
 	return nil
+}
+
+// groupDegradeReaction 群里的降级产物只留表情。
+//
+// 兜底句(retry/重新生成都失败时复用的原始输出)最大的问题是**接别的线**:
+// 它没有经过帧校验, 也没有"我在回哪一句"的自觉, 于是很容易把上一件事的词借过来。
+// 群里宁可不说话, 或者只接一张表情。
+func groupDegradeReaction(f OutputFrame) OutputFrame {
+	var stickers []FrameItem
+	for _, it := range f.Reply {
+		if it.Kind == "sticker" {
+			stickers = append(stickers, it)
+		}
+	}
+	if len(stickers) == 0 {
+		log.Info("convo:engine", "群降级产物无表情可发 — 本轮沉默 (兜底句会把别的事接进来)")
+		return OutputFrame{}
+	}
+	return OutputFrame{Reply: stickers, Degraded: true}
 }
 
 // ——— §6.10.6 「你在群里的位置」 ———

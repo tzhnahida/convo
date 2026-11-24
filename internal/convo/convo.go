@@ -503,6 +503,92 @@ func (e *Engine) recentDialogIn(sceneKey string, n int) string {
 	if err != nil || len(msgs) == 0 {
 		return ""
 	}
+	return e.renderDialogRows(sceneKey, msgs)
+}
+
+// recentThreadIn 只取"正在接的这一条线"的上下文 (§6.10.3 话题线)。
+//
+// 起因 (2026-11-24 用户: "串事件, A 事件的词串入 B 事件"):
+//
+//	12:36 有人抱怨「材料力学至少花了 6 块钱的 token」
+//	12:38 同一个人发了张 Cadence 登录界面说「wc域名回来了」
+//	它回「回来了就好 别再花几块钱token了」—— A 事件的词接进了 B 事件。
+//
+// 根因: L1 原来直接取最近 12 条, 多话题群里几条线被糊成一团, 最近的词谁都能借。
+//
+// 规则 (只依赖消息本身, 不调模型):
+//   - 锚点 = 场景里最后一条**别人**说的话 = 本轮要接的那条;
+//   - 锚点自带图/表情 → 只给锚点 (人看见图就直接对图说话, 不会翻上一条);
+//   - 否则给锚点往前最多 max 条, 且不早于锚点前 Group.ThreadWindowMin 分钟;
+//   - narrow (判不出在跟谁说话 / 插话档) → 只给锚点 + 前一条。
+func (e *Engine) recentThreadIn(sceneKey string, max int, narrow bool) string {
+	const load = 32
+	var msgs []MessageRecord
+	var err error
+	if strings.TrimSpace(sceneKey) == "" {
+		msgs, err = e.Store.RecentMessages(load)
+	} else {
+		msgs, err = e.Store.RecentMessagesIn(sceneKey, load)
+	}
+	if err != nil || len(msgs) == 0 {
+		return ""
+	}
+	// ⚠️ RecentMessages* 返回的是 **id DESC (最新在前)** —— 与 renderDialogRows 的
+	// 渲染方向一致 (它从末尾往前渲染, 于是最新那条落在最后一行)。
+	anchor := -1
+	for i := 0; i < len(msgs); i++ {
+		if msgs[i].Dir != "ai" {
+			anchor = i
+			break
+		}
+	}
+	if anchor < 0 { // 最近全是它自己说的 → 退回旧的整窗 (主动开场那类场景)
+		return e.renderDialogRows(sceneKey, msgs)
+	}
+	back := 6
+	if narrow {
+		back = 1
+	}
+	if historyCarriesPicture(msgs[anchor]) {
+		back = 0
+	}
+	if max > 0 && back > max-1 {
+		back = max - 1
+	}
+	end := anchor + back // DESC: 下标越大越旧
+	if end > len(msgs)-1 {
+		end = len(msgs) - 1
+	}
+	// 时间窗: 太久以前的不是同一条线 (群里十分钟前那条多半已经换了话题)。
+	window := time.Duration(e.Cfg.Group.ThreadWindowMin) * time.Minute
+	if window <= 0 {
+		window = time.Duration(DefaultThreadWindowMin) * time.Minute
+	}
+	if aTS, aerr := time.ParseInLocation(historyTSLayout, strings.TrimSpace(msgs[anchor].TS), time.Local); aerr == nil {
+		for end > anchor {
+			t, terr := time.ParseInLocation(historyTSLayout, strings.TrimSpace(msgs[end].TS), time.Local)
+			if terr == nil && aTS.Sub(t) > window {
+				end--
+				continue
+			}
+			break
+		}
+	}
+	return e.renderDialogRows(sceneKey, msgs[anchor:end+1])
+}
+
+// historyCarriesPicture 这条消息是不是"甩了张图/表情" (锚点带图就不再往前翻)。
+func historyCarriesPicture(m MessageRecord) bool {
+	if m.Kind == "image" || m.Kind == "sticker" {
+		return true
+	}
+	p := m.Payload
+	return strings.Contains(p, "[图") || strings.Contains(p, "(照片)") ||
+		strings.Contains(p, "[图片]") || strings.Contains(p, "[表情]")
+}
+
+// renderDialogRows 把一批消息渲染成 L1 历史文本 (编号 / 引用 / 时间锚都在这里)。
+func (e *Engine) renderDialogRows(sceneKey string, msgs []MessageRecord) string {
 	// §6.10.3 **多主体发言流**: 群场景里每一行要带"是谁说的"。
 	//
 	// ⚠️ **一次查询, 后面全程用 map** —— 不要在循环里逐条查(那是 N 次 IO)。
@@ -794,7 +880,19 @@ func (e *Engine) dialogReply(ctx context.Context, in DialogInput, p *PersonaProf
 	in.Lang = e.Lang
 	// ⚠️ 按**场景**取 L1: 群路径漏传 sceneKey 会把别处的话读进来 (跨人转述)。
 	// 私聊时 in.SceneKey 为空 → 走全局, 行为与升级前逐字节相同。
-	in.History = e.recentDialogIn(in.SceneKey, 12) // L1: 最近 ~6 轮 (含本轮 user 消息, 冗余无碍)
+	//
+	// 2026-11-24 (串事件修复): 不再把最近 12 条糊成一团 —— 只取"正在接的这一条线"。
+	// 锚点带图只给锚点; 插话/判不出在跟谁说话时只给锚点 + 前一条。
+	if in.IsProactive {
+		in.History = e.recentDialogIn(in.SceneKey, 6) // 主动开场没有"要回的那条", 给近况即可
+	} else {
+		// 群: 一条线最多 7 行 (锚点 + 6 句); 私聊: 一对一, 整段交谈本来就是同一条线, 给足 12。
+		maxLines := 12
+		if SceneKindOf(in.SceneKey) == SceneKindGroup {
+			maxLines = 7
+		}
+		in.History = e.recentThreadIn(in.SceneKey, maxLines, in.ThreadNarrow)
+	}
 	// 模块 11: 梗库注入 + 接住感知
 	in.Slangs, _ = e.Store.TopSlang(12)
 	if in.UserText != "" {

@@ -49,7 +49,7 @@ func TestBuildSystem_SegmentOrderIsCachePolicy(t *testing.T) {
 		}
 		return i
 	}
-	role, ex, reg, hist, assoc := idx("ROLE_MARK"), idx("【示例对话】"), idx("REG_MARK"), idx("【最近对话】"), idx("ASSOC_MARK")
+	role, ex, reg, hist, assoc := idx("ROLE_MARK"), idx("【示例对话】"), idx("REG_MARK"), idx("【现在这条线】"), idx("ASSOC_MARK")
 	if role > ex {
 		t.Fatal("角色位是稳定段, 必须排在段 2 示例之前 (挪到后面会毁掉两个稳定段的前缀)")
 	}
