@@ -9,6 +9,11 @@ convo.new
 *.exe~
 *.bak-20*
 
+# ——— 离线开发包 (2026-11-12: 打包暂存 / 交叉编译产物 / 出包目录) ———
+/dist/
+/.pkgstage/
+/build-devkit-*/
+
 # ——— 运行期数据 (默认 data_dir=data / db_file=convo-trial.db) ———
 data/
 *.db
