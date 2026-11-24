@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "**/*.md"
+      - "dist/**"
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: vet · gofmt · test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          out="$(gofmt -l internal cmd)"
+          if [ -n "$out" ]; then echo "未格式化的文件:"; echo "$out"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: build
+        run: go build ./...
+      - name: 控制台 JS 语法闸
+        run: |
+          node -e '
+          const fs = require("fs");
+          const s = fs.readFileSync("internal/convo/dashboard_html.go", "utf8");
+          const i = s.indexOf("<script>"), j = s.indexOf("</script>", i);
+          if (i < 0 || j <= i) { console.error("抽不出 <script> 块"); process.exit(1); }
+          fs.writeFileSync("/tmp/page-check.js", s.slice(i + 8, j));
+          '
+          node --check /tmp/page-check.js
+      - name: test
+        run: go test ./... -count=1 -timeout 20m
+
+  cross:
+    name: 交叉编译 ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build -trimpath -ldflags "-s -w" ./...

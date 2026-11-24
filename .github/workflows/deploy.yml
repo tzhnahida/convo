@@ -1,0 +1,87 @@
+name: Deploy (Pi)
+
+# 只在代码变了才部署; 文档/静态资源改动不重启线上机器人。
+on:
+  push:
+    branches: [master]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-pi
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建 linux/arm64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: 控制台 JS 语法闸 (部署前 fail-closed)
+        run: |
+          node -e '
+          const fs = require("fs");
+          const s = fs.readFileSync("internal/convo/dashboard_html.go", "utf8");
+          const i = s.indexOf("<script>"), j = s.indexOf("</script>", i);
+          if (i < 0 || j <= i) { console.error("抽不出 <script> 块"); process.exit(1); }
+          fs.writeFileSync("/tmp/page-check.js", s.slice(i + 8, j));
+          '
+          node --check /tmp/page-check.js
+      - name: build
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -ldflags "-s -w" -o convo-arm64 ./cmd/convo
+          md5sum convo-arm64 | tee convo-arm64.md5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: convo-linux-arm64
+          path: |
+            convo-arm64
+            convo-arm64.md5
+          retention-days: 7
+
+  deploy:
+    name: 安装并重启 (Pi)
+    needs: build
+    # 自托管 runner 就装在 Pi 上, 所以这里不需要 SSH / 不需要入站 IPv4。
+    runs-on: [self-hosted, pi]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: convo-linux-arm64
+      - name: 安装 + 重启 + 核对运行中的 md5
+        run: |
+          set -euo pipefail
+          NEW="$(pwd)/convo-arm64"
+          test -f "$NEW"
+          WANT="$(awk '{print $1}' convo-arm64.md5)"
+          GOT="$(md5sum "$NEW" | awk '{print $1}')"
+          echo "artifact md5 = $GOT"
+          if [ "$WANT" != "$GOT" ]; then echo "!! 产物哈希与清单不一致"; exit 1; fi
+
+          cd /home/tzh/convo
+          TAG="$(date +%Y%m%d-%H%M%S)"
+          cp convo "convo.bak-$TAG"
+          install -m 0755 "$NEW" convo.new
+          mv convo.new convo
+          sudo -n systemctl restart convo
+          sleep 6
+          systemctl is-active convo
+          RUN="$(md5sum convo | awk '{print $1}')"
+          echo "running md5 = $RUN"
+          if [ "$RUN" != "$GOT" ]; then echo "!! 跑起来的不是刚装的那个"; exit 1; fi
+          echo "✓ 部署完成"
+          ls -t convo.bak-* | tail -n +4 | xargs -r rm -f

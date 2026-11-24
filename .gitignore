@@ -33,3 +33,6 @@ data/
 *.py
 cmsg*.txt
 commitmsg*.txt
+
+# ——— CI 临时下载物 ———
+/.ci/
